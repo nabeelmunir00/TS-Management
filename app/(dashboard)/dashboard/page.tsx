@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   CheckSquare,
   FolderOpen,
@@ -203,6 +204,7 @@ function getGreeting() {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { user, isLoaded, isSignedIn } = useUser();
   const [tasks, setTasks] = useState<Task[]>(TASKS);
 
   function toggleTask(id: string) {
@@ -217,23 +219,62 @@ export default function DashboardPage() {
 
   const completedCount = tasks.filter((t) => t.status === "done").length;
 
+  // Get user's display name from Clerk
+  const getUserName = () => {
+    if (!isLoaded) return "Loading...";
+    if (!isSignedIn) return "Guest";
+
+    // Try to get full name first
+    if (user.fullName) return user.fullName;
+
+    // Fallback to first name
+    if (user.firstName) return user.firstName;
+
+    // Fallback to username
+    if (user.username) return user.username;
+
+    // Final fallback to email
+    if (user.emailAddresses && user.emailAddresses.length > 0) {
+      return user.emailAddresses[0].emailAddress.split("@")[0];
+    }
+
+    return "User";
+  };
+
+  // Get user's avatar
+  const getUserAvatar = () => {
+    if (!isLoaded || !isSignedIn) return null;
+    return user.imageUrl;
+  };
+
+  const userName = getUserName();
+  const userAvatar = getUserAvatar();
+
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
       {/* ── Top bar ── */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-        <div>
-          <p className="text-xs text-muted-foreground">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-          <h1 className="text-lg font-semibold tracking-tight">
-            {getGreeting()}, Ali 👋
-          </h1>
+        <div className="flex items-center gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+            <h1 className="text-lg font-semibold tracking-tight">
+              {getGreeting()}, {userName} 👋
+            </h1>
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          {isSignedIn && (
+            <Badge variant="outline" className="text-xs gap-1.5 h-8">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Online
+            </Badge>
+          )}
           <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
             <Bot className="w-3.5 h-3.5" />
             Ask AI

@@ -18,6 +18,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import { useUser, SignOutButton } from "@clerk/nextjs";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { useUser, SignOutButton } from "@clerk/nextjs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,55 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Helper Functions ──────────────────────────────────────────────────────
+
+function getUserInitials(user: any) {
+  if (!user) return "?";
+
+  if (user.fullName) {
+    const names = user.fullName.split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return user.fullName.substring(0, 2).toUpperCase();
+  }
+
+  if (user.firstName) {
+    return user.firstName.substring(0, 2).toUpperCase();
+  }
+
+  if (user.username) {
+    return user.username.substring(0, 2).toUpperCase();
+  }
+
+  if (user.emailAddresses && user.emailAddresses.length > 0) {
+    const email = user.emailAddresses[0].emailAddress;
+    return email.substring(0, 2).toUpperCase();
+  }
+
+  return "?";
+}
+
+function getUserDisplayName(user: any) {
+  if (!user) return "User";
+
+  if (user.fullName) return user.fullName;
+  if (user.firstName) return user.firstName;
+  if (user.username) return user.username;
+  if (user.emailAddresses && user.emailAddresses.length > 0) {
+    return user.emailAddresses[0].emailAddress.split("@")[0];
+  }
+  return "User";
+}
+
+function getUserRole(user: any) {
+  if (user?.publicMetadata?.role) {
+    return user.publicMetadata.role as string;
+  }
+  return "Member";
+}
+
+// ─── Components ─────────────────────────────────────────────────────────────
 
 function NavBadge({
   badge,
@@ -153,7 +202,7 @@ function NavBadge({
   );
 }
 
-function NavLink({
+function DesktopNavLink({
   item,
   collapsed,
   active,
@@ -209,68 +258,13 @@ function NavLink({
   return linkContent;
 }
 
-// ─── Helper Functions ──────────────────────────────────────────────────────
+// ─── Main Desktop Sidebar ──────────────────────────────────────────────────
 
-function getUserInitials(user: any) {
-  if (!user) return "?";
-
-  // Try full name
-  if (user.fullName) {
-    const names = user.fullName.split(" ");
-    if (names.length >= 2) {
-      return `${names[0][0]}${names[1][0]}`.toUpperCase();
-    }
-    return user.fullName.substring(0, 2).toUpperCase();
-  }
-
-  // Try first name
-  if (user.firstName) {
-    return user.firstName.substring(0, 2).toUpperCase();
-  }
-
-  // Try username
-  if (user.username) {
-    return user.username.substring(0, 2).toUpperCase();
-  }
-
-  // Try email
-  if (user.emailAddresses && user.emailAddresses.length > 0) {
-    const email = user.emailAddresses[0].emailAddress;
-    return email.substring(0, 2).toUpperCase();
-  }
-
-  return "?";
-}
-
-function getUserDisplayName(user: any) {
-  if (!user) return "User";
-
-  if (user.fullName) return user.fullName;
-  if (user.firstName) return user.firstName;
-  if (user.username) return user.username;
-  if (user.emailAddresses && user.emailAddresses.length > 0) {
-    return user.emailAddresses[0].emailAddress.split("@")[0];
-  }
-  return "User";
-}
-
-function getUserRole(user: any) {
-  // You can customize this based on your user metadata
-  // For example, check if user has a role in publicMetadata
-  if (user?.publicMetadata?.role) {
-    return user.publicMetadata.role as string;
-  }
-  return "Member";
-}
-
-// ─── Main Sidebar ─────────────────────────────────────────────────────────────
-
-export default function Sidebar() {
+export default function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const { user, isLoaded, isSignedIn } = useUser();
 
-  // Get user data
   const userInitials = isLoaded && isSignedIn ? getUserInitials(user) : "?";
   const userDisplayName =
     isLoaded && isSignedIn ? getUserDisplayName(user) : "Guest";
@@ -280,7 +274,7 @@ export default function Sidebar() {
     <TooltipProvider>
       <aside
         className={cn(
-          "flex flex-col h-screen bg-background border-r border-border transition-all duration-300 ease-in-out",
+          "hidden md:flex flex-col h-screen bg-background border-r border-border transition-all duration-300 ease-in-out sticky top-0",
           collapsed ? "w-[60px]" : "w-[240px]",
         )}
       >
@@ -322,21 +316,15 @@ export default function Sidebar() {
                   collapsed && "justify-center px-1",
                 )}
               >
-                {/* User Avatar */}
-                {isLoaded && isSignedIn && user?.imageUrl ? (
-                  <img
-                    src={user.imageUrl}
-                    alt={userDisplayName}
-                    className="w-7 h-7 rounded-full shrink-0 ring-2 ring-violet-100 dark:ring-violet-900"
-                  />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-violet-200 dark:bg-violet-800 flex items-center justify-center shrink-0">
-                    <span className="text-[11px] font-semibold text-violet-700 dark:text-violet-300">
+                <Avatar className="w-7 h-7">
+                  {isLoaded && isSignedIn && user?.imageUrl ? (
+                    <AvatarImage src={user.imageUrl} alt={userDisplayName} />
+                  ) : (
+                    <AvatarFallback className="bg-violet-200 text-violet-700 dark:bg-violet-800 dark:text-violet-300 text-[11px]">
                       {userInitials}
-                    </span>
-                  </div>
-                )}
-
+                    </AvatarFallback>
+                  )}
+                </Avatar>
                 {!collapsed && (
                   <>
                     <div className="flex-1 text-left min-w-0">
@@ -397,7 +385,7 @@ export default function Sidebar() {
                 )}
                 {collapsed && <Separator className="my-1" />}
                 {section.items.map((item) => (
-                  <NavLink
+                  <DesktopNavLink
                     key={item.href}
                     item={item}
                     collapsed={collapsed}
