@@ -1,65 +1,95 @@
-import Image from "next/image";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { ArrowRight, Sparkles, CheckCircle, Layout, Brain } from "lucide-react";
 
-export default function Home() {
+export default async function HomePage() {
+  const { userId } = await auth();
+
+  if (userId) {
+    redirect("/dashboard");
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
+      <div className="container mx-auto px-4 py-20">
+        {/* Hero Section */}
+        <div className="text-center space-y-8">
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-2 bg-purple-500/20 px-4 py-2 rounded-full border border-purple-500/30">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span className="text-purple-300 text-sm">
+                AI-Powered Development
+              </span>
+            </div>
+          </div>
+
+          <h1 className="text-6xl md:text-7xl font-bold text-white">
+            Developer Hub
+            <span className="block text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">
+              Manage Everything
+            </span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+            All-in-one platform for developers to manage tasks, notes, system
+            design, and get AI-powered suggestions.
           </p>
+
+          <div className="flex flex-wrap gap-4 justify-center">
+            <Link href="/sign-up">
+              <button className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl text-white font-semibold hover:shadow-2xl hover:shadow-purple-500/30 transition-all transform hover:scale-105 inline-flex items-center gap-2">
+                Get Started Free
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </Link>
+            <Link href="/sign-in">
+              <button className="px-8 py-4 bg-gray-800/50 backdrop-blur border border-gray-700 rounded-xl text-white font-semibold hover:bg-gray-700/50 transition-all">
+                Sign In
+              </button>
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-3 gap-8 mt-20 max-w-6xl mx-auto">
+          <div className="bg-gray-800/30 backdrop-blur border border-gray-700 rounded-2xl p-8 hover:border-purple-500/50 transition-all">
+            <div className="bg-purple-500/20 w-14 h-14 rounded-xl flex items-center justify-center mb-4">
+              <CheckCircle className="w-8 h-8 text-purple-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              Task Management
+            </h3>
+            <p className="text-gray-400">
+              Create, organize, and track your development tasks with ease.
+            </p>
+          </div>
+
+          <div className="bg-gray-800/30 backdrop-blur border border-gray-700 rounded-2xl p-8 hover:border-blue-500/50 transition-all">
+            <div className="bg-blue-500/20 w-14 h-14 rounded-xl flex items-center justify-center mb-4">
+              <Layout className="w-8 h-8 text-blue-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              System Design
+            </h3>
+            <p className="text-gray-400">
+              Design system architecture with interactive canvas.
+            </p>
+          </div>
+
+          <div className="bg-gray-800/30 backdrop-blur border border-gray-700 rounded-2xl p-8 hover:border-green-500/50 transition-all">
+            <div className="bg-green-500/20 w-14 h-14 rounded-xl flex items-center justify-center mb-4">
+              <Brain className="w-8 h-8 text-green-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              AI Assistant
+            </h3>
+            <p className="text-gray-400">
+              Get smart suggestions and automate your workflow.
+            </p>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
