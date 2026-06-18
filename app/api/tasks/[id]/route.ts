@@ -6,8 +6,10 @@ import {
   deleteTask,
   toggleTaskStatus,
   archiveTask,
-} from "@/lib/task-service";
+} from "@/lib/services/tast-services";
 import { auth } from "@clerk/nextjs/server";
+
+// ─── GET: Get single task ──────────────────────────────────────────────────
 
 export async function GET(
   request: NextRequest,
@@ -38,6 +40,8 @@ export async function GET(
   }
 }
 
+// ─── PUT: Update task ──────────────────────────────────────────────────────
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } },
@@ -49,6 +53,14 @@ export async function PUT(
     }
 
     const body = await request.json();
+
+    // Validate required fields
+    if (body.title !== undefined && !body.title.trim()) {
+      return NextResponse.json(
+        { error: "Task title cannot be empty" },
+        { status: 400 },
+      );
+    }
 
     const result = await updateTask({
       id: params.id,
@@ -72,6 +84,8 @@ export async function PUT(
     );
   }
 }
+
+// ─── DELETE: Delete task ──────────────────────────────────────────────────
 
 export async function DELETE(
   request: NextRequest,
@@ -102,6 +116,8 @@ export async function DELETE(
   }
 }
 
+// ─── PATCH: Partial updates (toggle status, archive, etc.) ──────────────
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } },
@@ -117,17 +133,23 @@ export async function PATCH(
 
     let result;
 
-    if (action === "toggle-status") {
-      result = await toggleTaskStatus(params.id, userId);
-    } else if (action === "archive") {
-      result = await archiveTask(params.id, userId, true);
-    } else if (action === "unarchive") {
-      result = await archiveTask(params.id, userId, false);
-    } else {
-      return NextResponse.json(
-        { error: "Invalid action. Use: toggle-status, archive, unarchive" },
-        { status: 400 },
-      );
+    switch (action) {
+      case "toggle-status":
+        result = await toggleTaskStatus(params.id, userId);
+        break;
+      case "archive":
+        result = await archiveTask(params.id, userId, true);
+        break;
+      case "unarchive":
+        result = await archiveTask(params.id, userId, false);
+        break;
+      default:
+        return NextResponse.json(
+          {
+            error: "Invalid action. Use: toggle-status, archive, unarchive",
+          },
+          { status: 400 },
+        );
     }
 
     if (!result.success) {

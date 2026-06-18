@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { v4 as uuidv4 } from "uuid";
 import {
   Plus,
   Search,
@@ -52,37 +53,38 @@ import {
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
-// ── Reusable modal + shared types ──
 import { TaskFormModal } from "@/components/TaskModel";
 import type { Task, Priority, TaskStatus } from "@/components/TaskModel";
 
-// ─── Local types ──────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 type TaskView = "list" | "board";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── Constants ──────────────────────────────────────────────────────────────
 
 const PRIORITY_CONFIG: Record<
   Priority,
   { label: string; dot: string; badge: string }
 > = {
+  urgent: {
+    label: "Urgent",
+    dot: "bg-red-500",
+    badge: "bg-red-50 text-red-600 border-red-200",
+  },
   high: {
     label: "High",
-    dot: "bg-red-500",
-    badge:
-      "bg-red-50 text-red-600 border-red-200 dark:bg-red-950/40 dark:text-red-400",
+    dot: "bg-orange-500",
+    badge: "bg-orange-50 text-orange-600 border-orange-200",
   },
   medium: {
     label: "Medium",
     dot: "bg-amber-500",
-    badge:
-      "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400",
+    badge: "bg-amber-50 text-amber-600 border-amber-200",
   },
   low: {
     label: "Low",
     dot: "bg-emerald-500",
-    badge:
-      "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400",
+    badge: "bg-emerald-50 text-emerald-600 border-emerald-200",
   },
 };
 
@@ -92,34 +94,31 @@ const STATUS_CONFIG: Record<
 > = {
   todo: {
     label: "To Do",
-    badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+    badge: "bg-slate-100 text-slate-600",
     icon: Circle,
     border: "border-t-slate-400",
   },
   "in-progress": {
     label: "In Progress",
-    badge: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+    badge: "bg-blue-50 text-blue-600",
     icon: AlertCircle,
     border: "border-t-blue-500",
   },
-  done: {
-    label: "Done",
-    badge:
-      "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
-    icon: CheckCircle2,
-    border: "border-t-emerald-500",
-  },
   review: {
     label: "Review",
-    badge:
-      "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
+    badge: "bg-purple-50 text-purple-600",
     icon: Clock3,
     border: "border-t-purple-500",
+  },
+  done: {
+    label: "Done",
+    badge: "bg-emerald-50 text-emerald-600",
+    icon: CheckCircle2,
+    border: "border-t-emerald-500",
   },
 };
 
 const BOARD_COLUMNS: TaskStatus[] = ["todo", "in-progress", "review", "done"];
-
 const STATUS_CHIPS = [
   { key: "all", label: "All" },
   { key: "todo", label: "To Do" },
@@ -128,17 +127,16 @@ const STATUS_CHIPS = [
   { key: "done", label: "Done" },
 ];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getInitials(name: string) {
-  return name
+const getInitials = (name: string) =>
+  name
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase();
-}
 
-function formatDue(due: string) {
+const formatDue = (due: string) => {
   const d = new Date(due);
   const diff = Math.ceil(
     (d.getTime() - new Date(new Date().toDateString()).getTime()) / 86400000,
@@ -147,13 +145,12 @@ function formatDue(due: string) {
   if (diff === 1) return "Tomorrow";
   if (diff < 0) return `${Math.abs(diff)}d overdue`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+};
 
-function isOverdue(due: string, status: TaskStatus) {
-  return status !== "done" && new Date(due) < new Date();
-}
+const isOverdue = (due: string, status: TaskStatus) =>
+  status !== "done" && new Date(due) < new Date();
 
-// ─── TaskCard ────────────────────────────────────────────────────────────────
+// ─── TaskCard ──────────────────────────────────────────────────────────────
 
 function TaskCard({
   task,
@@ -171,21 +168,21 @@ function TaskCard({
   const StatusIcon = STATUS_CONFIG[task.status].icon;
   const subtasksDone = task.subtasks?.filter((s) => s.done).length ?? 0;
   const subtasksTotal = task.subtasks?.length ?? 0;
-  const overdue = isOverdue(task.due || task.createdAt, task.status);
+  const overdue = isOverdue(task.dueDate || task.createdAt, task.status);
 
   return (
     <div
       className={cn(
-        "group relative bg-card border border-border rounded-xl transition-all duration-150",
-        "hover:border-violet-200 dark:hover:border-violet-800 hover:shadow-sm",
-        task.status === "done" && "opacity-55",
+        "group relative bg-card border rounded-lg transition-all",
+        "hover:border-violet-200 hover:shadow-sm",
+        task.status === "done" && "opacity-60",
         compact ? "p-3" : "p-4",
       )}
     >
       {/* Priority stripe */}
       <span
         className={cn(
-          "absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full",
+          "absolute left-0 top-2 bottom-2 w-1 rounded-r-full",
           PRIORITY_CONFIG[task.priority].dot,
         )}
       />
@@ -193,19 +190,18 @@ function TaskCard({
       <div className={cn("flex items-start gap-3", compact ? "pl-2" : "pl-3")}>
         {/* Toggle */}
         <button
-          onClick={() => onToggle(task.id)}
+          onClick={() => onToggle(task._id)}
           className="mt-0.5 shrink-0 text-muted-foreground hover:text-violet-500 transition-colors"
-          aria-label="Toggle task"
         >
           {task.status === "done" ? (
-            <CheckCircle2 className="w-[18px] h-[18px] text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           ) : (
-            <Circle className="w-[18px] h-[18px]" />
+            <Circle className="w-4 h-4" />
           )}
         </button>
 
         <div className="flex-1 min-w-0">
-          {/* Title */}
+          {/* Title + Menu */}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <p
@@ -224,7 +220,6 @@ function TaskCard({
               )}
             </div>
 
-            {/* 3-dot menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -235,16 +230,12 @@ function TaskCard({
                   <MoreVertical className="w-3.5 h-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuLabel className="text-xs">
-                  Actions
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
+              <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem
                   onClick={() => onEdit(task)}
                   className="text-xs gap-2 cursor-pointer"
                 >
-                  <Edit className="w-3.5 h-3.5" /> Edit task
+                  <Edit className="w-3.5 h-3.5" /> Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
                   <Copy className="w-3.5 h-3.5" /> Duplicate
@@ -254,8 +245,8 @@ function TaskCard({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => onDelete(task.id)}
-                  className="text-xs gap-2 text-destructive focus:text-destructive cursor-pointer"
+                  onClick={() => onDelete(task._id)}
+                  className="text-xs gap-2 text-destructive cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                 </DropdownMenuItem>
@@ -267,7 +258,7 @@ function TaskCard({
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
             <span
               className={cn(
-                "inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md border",
+                "inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded border",
                 PRIORITY_CONFIG[task.priority].badge,
               )}
             >
@@ -281,7 +272,7 @@ function TaskCard({
             </span>
             <span
               className={cn(
-                "inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md",
+                "inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded",
                 STATUS_CONFIG[task.status].badge,
               )}
             >
@@ -292,7 +283,7 @@ function TaskCard({
               task.tags?.slice(0, 2).map((tag) => (
                 <span
                   key={tag}
-                  className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md"
+                  className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded"
                 >
                   #{tag}
                 </span>
@@ -301,7 +292,7 @@ function TaskCard({
 
           {/* Subtasks progress */}
           {subtasksTotal > 0 && !compact && (
-            <div className="mt-2.5 space-y-1">
+            <div className="mt-2 space-y-1">
               <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>Subtasks</span>
                 <span>
@@ -316,27 +307,27 @@ function TaskCard({
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between mt-2 pt-2 border-t">
             <div className="flex items-center gap-2">
-              {task.assignee && (
+              {task.assignedTo && (
                 <div className="flex items-center gap-1.5">
                   <Avatar className="w-5 h-5">
                     <AvatarImage
                       src={task.assigneeAvatar}
-                      alt={task.assignee}
+                      alt={task.assignedTo}
                     />
-                    <AvatarFallback className="text-[8px] bg-violet-100 dark:bg-violet-900/40 text-violet-700">
-                      {getInitials(task.assignee)}
+                    <AvatarFallback className="text-[8px] bg-violet-100 text-violet-700">
+                      {getInitials(task.assignedTo)}
                     </AvatarFallback>
                   </Avatar>
                   {!compact && (
                     <span className="text-[11px] text-muted-foreground">
-                      {task.assignee}
+                      {task.assignedTo}
                     </span>
                   )}
                 </div>
               )}
-              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+              <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded">
                 {task.project}
               </span>
             </div>
@@ -347,7 +338,7 @@ function TaskCard({
               )}
             >
               <CalendarDays className="w-3 h-3" />
-              {task.due ? formatDue(task.due) : "No due date"}
+              {task.dueDate ? formatDue(task.dueDate) : "No date"}
             </span>
           </div>
         </div>
@@ -356,7 +347,7 @@ function TaskCard({
   );
 }
 
-// ─── Board View ───────────────────────────────────────────────────────────────
+// ─── Board View ────────────────────────────────────────────────────────────
 
 function BoardView({
   tasks,
@@ -383,14 +374,14 @@ function BoardView({
               )}
             >
               <span className="text-xs font-medium">{col.label}</span>
-              <span className="text-[10px] font-medium text-muted-foreground bg-background px-1.5 py-0.5 rounded-full border">
+              <span className="text-[10px] font-medium bg-background px-2 py-0.5 rounded-full border">
                 {colTasks.length}
               </span>
             </div>
             <div className="flex flex-col gap-2 min-h-[100px]">
               {colTasks.length === 0 ? (
-                <div className="border-2 border-dashed border-border rounded-xl flex items-center justify-center py-8">
-                  <p className="text-[11px] text-muted-foreground">No tasks</p>
+                <div className="border-2 border-dashed rounded-lg flex items-center justify-center py-8">
+                  <p className="text-[11px] text-muted-foreground">Empty</p>
                 </div>
               ) : (
                 colTasks.map((task) => (
@@ -412,7 +403,7 @@ function BoardView({
   );
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
   const { user, isLoaded } = useUser();
@@ -426,13 +417,10 @@ export default function TasksPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
-
-  // ── Modal state ──
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // ── Fetch Tasks from Database ──
-
+  // ── Fetch Tasks ──
   const fetchTasks = useCallback(async () => {
     if (!user?.id) return;
 
@@ -445,127 +433,96 @@ export default function TasksPage() {
       if (filterPriority !== "all") params.append("priority", filterPriority);
       if (search) params.append("search", search);
 
-      const response = await fetch(`/api/tasks?${params.toString()}`);
+      const res = await fetch(`/api/tasks?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch tasks");
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to fetch tasks");
-      }
-
-      const data = await response.json();
+      const data = await res.json();
       setTasks(data);
-    } catch (error) {
-      console.error("❌ Error fetching tasks:", error);
-      setError(error instanceof Error ? error.message : "Failed to load tasks");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tasks");
     } finally {
       setLoading(false);
     }
   }, [user?.id, filterStatus, filterPriority, search]);
 
-  // ── Fetch on mount and when filters change ──
-
   useEffect(() => {
-    if (isLoaded && user?.id) {
-      fetchTasks();
-    }
+    if (isLoaded && user?.id) fetchTasks();
   }, [isLoaded, user, fetchTasks]);
 
   // ── Handlers ──
-
-  function openNewTask() {
+  const openNewTask = () => {
     setEditingTask(null);
     setModalOpen(true);
-  }
+  };
 
-  function openEditTask(task: Task) {
+  const openEditTask = (task: Task) => {
     setEditingTask(task);
     setModalOpen(true);
-  }
+  };
 
-  // ── Save Task (Create/Update) ──
-
-  async function handleSave(saved: Task) {
+  const handleSave = async (saved: Task) => {
     try {
       const isEdit = !!saved.id;
-      const url = isEdit ? `/api/tasks/${saved.id}` : "/api/tasks";
-      const method = isEdit ? "PUT" : "POST";
+      const url = "/api/tasks";
+      const method = "POST";
 
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(saved),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save task");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save task");
       }
 
-      const data = await response.json();
+      const data = await res.json();
 
-      // Update local state
       if (isEdit) {
         setTasks((prev) => prev.map((t) => (t.id === saved.id ? data : t)));
       } else {
         setTasks((prev) => [data, ...prev]);
       }
-    } catch (error) {
-      console.error("❌ Error saving task:", error);
-      alert(error instanceof Error ? error.message : "Failed to save task");
+    } catch (err) {
+      console.error("❌ Save error:", err);
+      alert(err instanceof Error ? err.message : "Failed to save task");
     }
-  }
+  };
 
-  // ── Toggle Task Status ──
-
-  async function toggleTask(id: string) {
+  const toggleTask = async (id: string) => {
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
+      const res = await fetch(`/api/tasks/${id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "toggle-status" }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to toggle task");
-      }
+      if (!res.ok) throw new Error("Failed to toggle task");
 
-      const data = await response.json();
+      const data = await res.json();
       setTasks((prev) => prev.map((t) => (t.id === id ? data : t)));
-    } catch (error) {
-      console.error("❌ Error toggling task:", error);
-      alert(error instanceof Error ? error.message : "Failed to toggle task");
+    } catch (err) {
+      console.error("❌ Toggle error:", err);
+      alert(err instanceof Error ? err.message : "Failed to toggle task");
     }
-  }
+  };
 
-  // ── Delete Task ──
-
-  async function deleteTask(id: string) {
-    if (!confirm("Are you sure you want to delete this task?")) return;
+  const deleteTask = async (id: string) => {
+    if (!confirm("Delete this task?")) return;
 
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to delete task");
-      }
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete task");
 
       setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (error) {
-      console.error("❌ Error deleting task:", error);
-      alert(error instanceof Error ? error.message : "Failed to delete task");
+    } catch (err) {
+      console.error("❌ Delete error:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete task");
     }
-  }
+  };
 
   // ── Derived ──
-
   const filtered = tasks.filter((t) => {
     const q = search.toLowerCase();
     return (
@@ -586,97 +543,79 @@ export default function TasksPage() {
     done: tasks.filter((t) => t.status === "done").length,
   };
 
-  const hasActiveFilters =
+  const hasFilters =
     filterStatus !== "all" || filterPriority !== "all" || search !== "";
 
-  function clearFilters() {
+  const clearFilters = () => {
     setSearch("");
     setFilterStatus("all");
     setFilterPriority("all");
-  }
+  };
 
-  // ── Loading State ──
-
+  // ── Loading ──
   if (!isLoaded || loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-          <p className="text-sm text-muted-foreground">Loading tasks...</p>
-        </div>
+        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
       </div>
     );
   }
 
-  // ── Error State ──
-
+  // ── Error ──
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen">
-        <div className="text-center space-y-4">
-          <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
-          <h3 className="text-lg font-semibold">Failed to load tasks</h3>
-          <p className="text-sm text-muted-foreground">{error}</p>
-          <Button onClick={fetchTasks} variant="outline">
-            Try Again
-          </Button>
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <AlertCircle className="w-12 h-12 text-destructive" />
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button onClick={fetchTasks} variant="outline" size="sm">
+          Try Again
+        </Button>
       </div>
     );
   }
 
-  // ── Main Render ──
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-screen bg-background overflow-hidden">
-        {/* ── Header ── */}
-        <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+      <div className="flex flex-col h-screen bg-background">
+        {/* Header */}
+        <header className="flex items-center justify-between px-6 py-3 border-b shrink-0">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Tasks</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {counts.todo} to do · {counts["in-progress"]} in progress ·{" "}
+            <h1 className="text-lg font-semibold">Tasks</h1>
+            <p className="text-xs text-muted-foreground">
+              {counts.todo} todo · {counts["in-progress"]} in progress ·{" "}
               {counts.done} done
             </p>
           </div>
           <div className="flex items-center gap-2">
             {/* View toggle */}
-            <div className="flex border border-border rounded-lg overflow-hidden">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={view === "list" ? "default" : "ghost"}
-                    size="sm"
-                    className={cn(
-                      "rounded-none h-8 px-2.5",
-                      view === "list" &&
-                        "bg-violet-600 hover:bg-violet-700 text-white",
-                    )}
-                    onClick={() => setView("list")}
-                  >
-                    <ListFilter className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">List view</TooltipContent>
-              </Tooltip>
+            <div className="flex border rounded-lg overflow-hidden">
+              <Button
+                variant={view === "list" ? "default" : "ghost"}
+                size="sm"
+                className={cn(
+                  "rounded-none h-8 px-2.5",
+                  view === "list" &&
+                    "bg-violet-600 hover:bg-violet-700 text-white",
+                )}
+                onClick={() => setView("list")}
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+              </Button>
               <Separator orientation="vertical" className="h-8" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={view === "board" ? "default" : "ghost"}
-                    size="sm"
-                    className={cn(
-                      "rounded-none h-8 px-2.5",
-                      view === "board" &&
-                        "bg-violet-600 hover:bg-violet-700 text-white",
-                    )}
-                    onClick={() => setView("board")}
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Board view</TooltipContent>
-              </Tooltip>
+              <Button
+                variant={view === "board" ? "default" : "ghost"}
+                size="sm"
+                className={cn(
+                  "rounded-none h-8 px-2.5",
+                  view === "board" &&
+                    "bg-violet-600 hover:bg-violet-700 text-white",
+                )}
+                onClick={() => setView("board")}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </Button>
             </div>
 
             <Button
@@ -685,13 +624,13 @@ export default function TasksPage() {
               className="gap-1.5 h-8 text-xs bg-violet-600 hover:bg-violet-700 text-white"
             >
               <Plus className="w-3.5 h-3.5" />
-              New task
+              New Task
             </Button>
           </div>
         </header>
 
-        {/* ── Status chips ── */}
-        <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-border shrink-0 overflow-x-auto">
+        {/* Status chips */}
+        <div className="flex items-center gap-1.5 px-6 py-2 border-b overflow-x-auto shrink-0">
           {STATUS_CHIPS.map((chip) => (
             <button
               key={chip.key}
@@ -699,17 +638,15 @@ export default function TasksPage() {
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0",
                 filterStatus === chip.key
-                  ? "bg-violet-600 text-white shadow-sm"
+                  ? "bg-violet-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-muted/70",
               )}
             >
               {chip.label}
               <span
                 className={cn(
-                  "text-[10px] px-1 rounded-full",
-                  filterStatus === chip.key
-                    ? "bg-white/20 text-white"
-                    : "bg-background",
+                  "text-[10px] px-1.5 rounded-full",
+                  filterStatus === chip.key ? "bg-white/20" : "bg-background",
                 )}
               >
                 {counts[chip.key as keyof typeof counts]}
@@ -718,10 +655,10 @@ export default function TasksPage() {
           ))}
         </div>
 
-        {/* ── Search bar ── */}
-        <div className="flex items-center gap-2 px-6 py-3 border-b border-border shrink-0">
+        {/* Search + Filters */}
+        <div className="flex items-center gap-2 px-6 py-2 border-b shrink-0">
           <div className="flex-1 relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search tasks..."
               value={search}
@@ -741,66 +678,63 @@ export default function TasksPage() {
             variant="outline"
             size="sm"
             className={cn(
-              "h-8 gap-1.5 text-xs shrink-0",
+              "h-8 gap-1.5 text-xs",
               showFilters && "border-violet-500 text-violet-600",
             )}
             onClick={() => setShowFilters(!showFilters)}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             Filters
-            {hasActiveFilters && (
+            {hasFilters && (
               <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
             )}
           </Button>
         </div>
 
-        {/* ── Expanded filters ── */}
+        {/* Expanded filters */}
         {showFilters && (
-          <div className="flex items-center gap-3 px-6 py-2.5 border-b border-border bg-muted/30 shrink-0">
-            <span className="text-xs text-muted-foreground shrink-0">
-              Priority:
-            </span>
+          <div className="flex items-center gap-3 px-6 py-2 border-b bg-muted/30 shrink-0">
+            <span className="text-xs text-muted-foreground">Priority:</span>
             <Select value={filterPriority} onValueChange={setFilterPriority}>
               <SelectTrigger className="h-7 text-xs w-[130px]">
-                <SelectValue placeholder="All priorities" />
+                <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All priorities</SelectItem>
-                <SelectItem value="high">🔴 High</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="urgent">🔴 Urgent</SelectItem>
+                <SelectItem value="high">🟠 High</SelectItem>
                 <SelectItem value="medium">🟡 Medium</SelectItem>
                 <SelectItem value="low">🟢 Low</SelectItem>
               </SelectContent>
             </Select>
-            {hasActiveFilters && (
+            {hasFilters && (
               <button
                 onClick={clearFilters}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 ml-auto"
+                className="text-xs text-muted-foreground hover:text-foreground ml-auto"
               >
-                <X className="w-3 h-3" /> Clear all
+                Clear all
               </button>
             )}
           </div>
         )}
 
-        {/* ── Content ── */}
+        {/* Content */}
         <ScrollArea className="flex-1">
           <div className="px-6 py-4">
             {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                  <CheckSquare className="w-7 h-7 text-muted-foreground" />
-                </div>
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <CheckSquare className="w-12 h-12 text-muted-foreground/30 mb-4" />
                 <h3 className="text-sm font-medium">No tasks found</h3>
-                <p className="text-xs text-muted-foreground mt-1 max-w-[220px]">
-                  {hasActiveFilters
-                    ? "Try clearing your filters."
-                    : "Create your first task to get started."}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {hasFilters
+                    ? "Try clearing your filters"
+                    : "Create your first task"}
                 </p>
-                {hasActiveFilters ? (
+                {hasFilters ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="mt-4 text-xs h-7"
+                    className="mt-4"
                     onClick={clearFilters}
                   >
                     Clear filters
@@ -808,10 +742,10 @@ export default function TasksPage() {
                 ) : (
                   <Button
                     size="sm"
-                    className="mt-4 text-xs h-7 gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                    className="mt-4 gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
                     onClick={openNewTask}
                   >
-                    <Plus className="w-3.5 h-3.5" /> New task
+                    <Plus className="w-3.5 h-3.5" /> New Task
                   </Button>
                 )}
               </div>
@@ -842,7 +776,6 @@ export default function TasksPage() {
         </ScrollArea>
       </div>
 
-      {/* ── Task Form Modal ── */}
       <TaskFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
