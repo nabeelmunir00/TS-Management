@@ -3,13 +3,19 @@ import { auth } from "@clerk/nextjs/server";
 import connectDB from "@/lib/db";
 import Project from "@/lib/models/Project";
 
+async function getTaskId(context: { params: { id: string } }) {
+  const params = await context.params;
+  return params.id;
+}
+
 // ─── GET: Single project ──────────────────────────────────────────────────
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -17,7 +23,7 @@ export async function GET(
     await connectDB();
 
     const project = await Project.findOne({
-      _id: params.id,
+      _id: id,
       userId,
     }).lean();
 
@@ -64,10 +70,11 @@ export async function GET(
 // ─── PATCH: Update project ────────────────────────────────────────────────
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -79,7 +86,7 @@ export async function PATCH(
 
     // Handle special actions
     if (action === "toggle-star") {
-      const project = await Project.findOne({ _id: params.id, userId });
+      const project = await Project.findOne({ _id: id, userId });
       if (!project) {
         return NextResponse.json(
           { error: "Project not found" },
@@ -120,7 +127,7 @@ export async function PATCH(
     }
 
     if (action === "toggle-archive") {
-      const project = await Project.findOne({ _id: params.id, userId });
+      const project = await Project.findOne({ _id: id, userId });
       if (!project) {
         return NextResponse.json(
           { error: "Project not found" },
@@ -186,7 +193,7 @@ export async function PATCH(
     if (body.isArchived !== undefined) updateData.isArchived = body.isArchived;
 
     const project = await Project.findOneAndUpdate(
-      { _id: params.id, userId },
+      { _id: id, userId },
       updateData,
       { new: true, runValidators: true },
     ).lean();
@@ -233,10 +240,11 @@ export async function PATCH(
 // ─── DELETE: Delete project ──────────────────────────────────────────────
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -244,7 +252,7 @@ export async function DELETE(
     await connectDB();
 
     const result = await Project.findOneAndDelete({
-      _id: params.id,
+      _id: id,
       userId,
     });
 

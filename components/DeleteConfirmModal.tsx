@@ -1,3 +1,4 @@
+// components/DeleteConfirmModal.tsx
 "use client";
 
 import {
@@ -18,6 +19,7 @@ interface DeleteConfirmModalProps {
   title: string;
   description?: string;
   isLoading?: boolean;
+  type?: "task" | "project" | "default";
 }
 
 export function DeleteConfirmModal({
@@ -27,7 +29,20 @@ export function DeleteConfirmModal({
   title,
   description = "This action cannot be undone.",
   isLoading = false,
+  type = "default",
 }: DeleteConfirmModalProps) {
+  const getTitle = () => {
+    if (type === "task") return "Delete Task";
+    if (type === "project") return "Delete Project";
+    return "Delete";
+  };
+
+  const getButtonText = () => {
+    if (type === "task") return "Delete Task";
+    if (type === "project") return "Delete Project";
+    return "Delete";
+  };
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="sm:max-w-[425px]">
@@ -36,7 +51,7 @@ export function DeleteConfirmModal({
             <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
-            <DialogTitle className="text-lg">Delete Task</DialogTitle>
+            <DialogTitle className="text-lg">{getTitle()}</DialogTitle>
           </div>
           <DialogDescription className="mt-3">
             Are you sure you want to delete <strong>"{title}"</strong>?
@@ -65,7 +80,7 @@ export function DeleteConfirmModal({
                 Deleting...
               </>
             ) : (
-              "Delete Task"
+              getButtonText()
             )}
           </Button>
         </DialogFooter>
