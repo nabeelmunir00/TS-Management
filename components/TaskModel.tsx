@@ -359,7 +359,7 @@ export function TaskFormModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="sm:max-w-[600px] p-0 gap-0 overflow-hidden bg-gradient-to-b from-background to-muted/5">
+      <DialogContent className="sm:max-w-[600px] p-0 gap-0 overflow-hidden  ">
         {/* ── Header ── */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/20">
           <div className="flex items-center justify-between">
@@ -398,10 +398,10 @@ export function TaskFormModal({
                 onClick={handleAIGenerate}
                 disabled={isGenerating || !form.title.trim()}
                 className={cn(
-                  "gap-2 h-9 text-xs font-medium transition-all rounded-lg",
+                  "gap-2 h-9 text-xs font-medium transition-all rounded-lg mr-4",
                   isGenerating || !form.title.trim()
                     ? "opacity-50 cursor-not-allowed"
-                    : "border-violet-200 hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30",
+                    : "border-violet-200 hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 ",
                 )}
               >
                 {isGenerating ? (
@@ -412,7 +412,6 @@ export function TaskFormModal({
                 ) : (
                   <>
                     <Sparkles className="w-3.5 h-3.5 text-violet-500" />
-                    AI Suggest
                   </>
                 )}
               </Button>
@@ -816,7 +815,7 @@ export function TaskFormModal({
                   {form.attachments?.map((attachment, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/50"
+                      className="flex items-center gap-2 p-2 rounded-lg  border border-border/50"
                     >
                       <Link className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       <span className="text-xs flex-1 truncate font-medium">
@@ -887,7 +886,7 @@ export function TaskFormModal({
         </ScrollArea>
 
         {/* ── Footer ── */}
-        <DialogFooter className="px-6 py-4 border-t bg-muted/10 gap-2 flex-row justify-end">
+        <DialogFooter className="px-6 py-6 border-t bg-muted/10 gap-2 flex-row justify-end">
           <Button
             variant="outline"
             size="sm"

@@ -462,7 +462,7 @@ export default function TasksPage() {
 
   const handleSave = async (saved: Task) => {
     try {
-      const isEdit = !!saved.id;
+      const isEdit = !!saved._id;
       const url = "/api/tasks";
       const method = "POST";
 
@@ -480,7 +480,7 @@ export default function TasksPage() {
       const data = await res.json();
 
       if (isEdit) {
-        setTasks((prev) => prev.map((t) => (t.id === saved.id ? data : t)));
+        setTasks((prev) => prev.map((t) => (t._id === saved._id ? data : t)));
       } else {
         setTasks((prev) => [data, ...prev]);
       }
@@ -501,7 +501,7 @@ export default function TasksPage() {
       if (!res.ok) throw new Error("Failed to toggle task");
 
       const data = await res.json();
-      setTasks((prev) => prev.map((t) => (t.id === id ? data : t)));
+      setTasks((prev) => prev.map((t) => (t._id === id ? data : t)));
     } catch (err) {
       console.error("❌ Toggle error:", err);
       alert(err instanceof Error ? err.message : "Failed to toggle task");

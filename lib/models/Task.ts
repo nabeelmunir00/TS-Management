@@ -142,22 +142,6 @@ const TaskSchema = new Schema<ITask>(
   },
 );
 
-// ─── Indexes for Performance ──────────────────────────────────────────────
-
-TaskSchema.index({ userId: 1, status: 1 });
-TaskSchema.index({ userId: 1, priority: 1 });
-TaskSchema.index({ userId: 1, dueDate: 1 });
-TaskSchema.index({ userId: 1, projectId: 1 });
-TaskSchema.index({ tags: 1 });
-
-// ─── Middleware ────────────────────────────────────────────────────────────
-
-// Update timestamps on save
-TaskSchema.pre("save", function (next) {
-  this.updatedAt = new Date();
-  next();
-});
-
 // ─── Model ──────────────────────────────────────────────────────────────────
 
 const TaskModel: Model<ITask> =
