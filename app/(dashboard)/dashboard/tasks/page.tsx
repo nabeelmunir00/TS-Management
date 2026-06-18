@@ -190,7 +190,7 @@ function TaskCard({
       <div className={cn("flex items-start gap-3", compact ? "pl-2" : "pl-3")}>
         {/* Toggle */}
         <button
-          onClick={() => onToggle(task._id)}
+          onClick={() => onToggle(task._id || task.id)}
           className="mt-0.5 shrink-0 text-muted-foreground hover:text-violet-500 transition-colors"
         >
           {task.status === "done" ? (

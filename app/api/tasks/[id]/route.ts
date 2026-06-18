@@ -9,19 +9,31 @@ import {
 } from "@/lib/services/tast-services";
 import { auth } from "@clerk/nextjs/server";
 
+async function getTaskId(context: { params: { id: string } }) {
+  const params = await context.params;
+  return params.id;
+}
+
 // ─── GET: Get single task ──────────────────────────────────────────────────
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!id) {
+      return NextResponse.json(
+        { error: "Task ID is required" },
+        { status: 400 },
+      );
+    }
 
-    const result = await getTaskById(params.id, userId);
+    const result = await getTaskById(id, userId);
 
     if (!result.success) {
       return NextResponse.json(
@@ -44,12 +56,19 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
+    const id = await getTaskId(context);
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!id) {
+      return NextResponse.json(
+        { error: "Task ID is required" },
+        { status: 400 },
+      );
     }
 
     const body = await request.json();
@@ -63,7 +82,7 @@ export async function PUT(
     }
 
     const result = await updateTask({
-      id: params.id,
+      id,
       userId,
       ...body,
     });
@@ -89,15 +108,22 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
+    const id = await getTaskId(context);
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!id) {
+      return NextResponse.json(
+        { error: "Task ID is required" },
+        { status: 400 },
+      );
+    }
 
-    const result = await deleteTask(params.id, userId);
+    const result = await deleteTask(id, userId);
 
     if (!result.success) {
       return NextResponse.json(
@@ -120,12 +146,19 @@ export async function DELETE(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
+    const id = await getTaskId(context);
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!id) {
+      return NextResponse.json(
+        { error: "Task ID is required" },
+        { status: 400 },
+      );
     }
 
     const body = await request.json();
@@ -135,13 +168,13 @@ export async function PATCH(
 
     switch (action) {
       case "toggle-status":
-        result = await toggleTaskStatus(params.id, userId);
+        result = await toggleTaskStatus(id, userId);
         break;
       case "archive":
-        result = await archiveTask(params.id, userId, true);
+        result = await archiveTask(id, userId, true);
         break;
       case "unarchive":
-        result = await archiveTask(params.id, userId, false);
+        result = await archiveTask(id, userId, false);
         break;
       default:
         return NextResponse.json(

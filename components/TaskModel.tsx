@@ -62,7 +62,7 @@ export type Priority = "low" | "medium" | "high" | "urgent";
 export type TaskStatus = "todo" | "in-progress" | "review" | "done";
 
 export interface Task {
-  id: string;
+  _id: string;
   title: string;
   description?: string;
   project: string;
@@ -150,6 +150,7 @@ function blankForm(
   defaultProject = "DevHub",
 ): Omit<Task, "id" | "createdAt" | "updatedAt"> {
   return {
+    _id: "",
     title: "",
     description: "",
     project: defaultProject,
@@ -343,7 +344,7 @@ export function TaskFormModal({
 
     const saved: Task = {
       ...form,
-      id: task?.id ?? Date.now().toString(),
+      _id: task?._id ?? Date.now().toString(),
       createdAt: task?.createdAt ?? new Date().toISOString().split("T")[0],
       updatedAt: new Date().toISOString().split("T")[0],
     };
