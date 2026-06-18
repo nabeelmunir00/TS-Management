@@ -1,6 +1,6 @@
 // lib/task-service.ts
-import TaskModel, { ITask, TaskStatus, Priority } from "@/models/Task";
-import connectDB from "./mongodb";
+import TaskModel, { ITask, TaskStatus, Priority } from "./models/Task";
+import connectDB from "./db";
 import { Types } from "mongoose";
 
 // ─── Types ──────────────────────────────────────────────────────────────────

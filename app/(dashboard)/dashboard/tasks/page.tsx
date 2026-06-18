@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   Search,
@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   X,
   Clock3,
+  Loader2,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 
@@ -58,104 +59,6 @@ import type { Task, Priority, TaskStatus } from "@/components/TaskModel";
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 type TaskView = "list" | "board";
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_TASKS: Task[] = [
-  {
-    id: "1",
-    title: "Setup authentication with Clerk",
-    description: "Implement OAuth and JWT authentication using Clerk",
-    project: "DevHub",
-    priority: "high",
-    status: "done",
-    due: "2026-06-17",
-    assignee: "Ali Khan",
-    assigneeAvatar: "https://avatar.vercel.sh/ali",
-    tags: ["auth", "security"],
-    subtasks: [
-      { id: "1-1", title: "Install Clerk SDK", done: true },
-      { id: "1-2", title: "Configure OAuth providers", done: true },
-    ],
-    createdAt: "2026-06-10",
-  },
-  {
-    id: "2",
-    title: "Build sidebar component",
-    description: "Create responsive sidebar with navigation items",
-    project: "DevHub",
-    priority: "high",
-    status: "in-progress",
-    due: "2026-06-18",
-    assignee: "Ali Khan",
-    assigneeAvatar: "https://avatar.vercel.sh/ali",
-    tags: ["ui", "components"],
-    subtasks: [
-      { id: "2-1", title: "Design sidebar layout", done: true },
-      { id: "2-2", title: "Implement collapse functionality", done: false },
-    ],
-    createdAt: "2026-06-12",
-  },
-  {
-    id: "3",
-    title: "Design dashboard UI",
-    description: "Create modern dashboard with analytics and widgets",
-    project: "DevHub",
-    priority: "medium",
-    status: "in-progress",
-    due: "2026-06-19",
-    assignee: "Sarah Ahmed",
-    assigneeAvatar: "https://avatar.vercel.sh/sarah",
-    tags: ["design", "ui"],
-    subtasks: [
-      { id: "3-1", title: "Create wireframes", done: true },
-      { id: "3-2", title: "Design analytics cards", done: false },
-    ],
-    createdAt: "2026-06-13",
-  },
-  {
-    id: "4",
-    title: "Integrate MongoDB with Mongoose",
-    description: "Setup MongoDB connection and create schemas",
-    project: "DevHub",
-    priority: "medium",
-    status: "todo",
-    due: "2026-06-20",
-    assignee: "Ali Khan",
-    assigneeAvatar: "https://avatar.vercel.sh/ali",
-    tags: ["database", "backend"],
-    subtasks: [],
-    createdAt: "2026-06-14",
-  },
-  {
-    id: "5",
-    title: "Setup OpenAI API integration",
-    description: "Implement AI features using OpenAI API",
-    project: "DevHub",
-    priority: "low",
-    status: "todo",
-    due: "2026-06-22",
-    assignee: "Usman Malik",
-    assigneeAvatar: "https://avatar.vercel.sh/usman",
-    tags: ["ai", "api"],
-    subtasks: [],
-    createdAt: "2026-06-15",
-  },
-  {
-    id: "6",
-    title: "Write API documentation",
-    description: "Document all API endpoints with examples",
-    project: "DevHub",
-    priority: "low",
-    status: "review",
-    due: "2026-06-19",
-    assignee: "Sarah Ahmed",
-    assigneeAvatar: "https://avatar.vercel.sh/sarah",
-    tags: ["documentation"],
-    subtasks: [],
-    createdAt: "2026-06-11",
-  },
-];
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -268,7 +171,7 @@ function TaskCard({
   const StatusIcon = STATUS_CONFIG[task.status].icon;
   const subtasksDone = task.subtasks?.filter((s) => s.done).length ?? 0;
   const subtasksTotal = task.subtasks?.length ?? 0;
-  const overdue = isOverdue(task.due, task.status);
+  const overdue = isOverdue(task.due || task.createdAt, task.status);
 
   return (
     <div
@@ -444,7 +347,7 @@ function TaskCard({
               )}
             >
               <CalendarDays className="w-3 h-3" />
-              {formatDue(task.due)}
+              {task.due ? formatDue(task.due) : "No due date"}
             </span>
           </div>
         </div>
@@ -514,7 +417,10 @@ function BoardView({
 export default function TasksPage() {
   const { user, isLoaded } = useUser();
 
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  // ── State ──
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<TaskView>("list");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -523,43 +429,139 @@ export default function TasksPage() {
 
   // ── Modal state ──
   const [modalOpen, setModalOpen] = useState(false);
-  // null = new task, Task object = edit mode
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // ── Fetch Tasks from Database ──
+
+  const fetchTasks = useCallback(async () => {
+    if (!user?.id) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      if (filterStatus !== "all") params.append("status", filterStatus);
+      if (filterPriority !== "all") params.append("priority", filterPriority);
+      if (search) params.append("search", search);
+
+      const response = await fetch(`/api/tasks?${params.toString()}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to fetch tasks");
+      }
+
+      const data = await response.json();
+      setTasks(data);
+    } catch (error) {
+      console.error("❌ Error fetching tasks:", error);
+      setError(error instanceof Error ? error.message : "Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id, filterStatus, filterPriority, search]);
+
+  // ── Fetch on mount and when filters change ──
+
+  useEffect(() => {
+    if (isLoaded && user?.id) {
+      fetchTasks();
+    }
+  }, [isLoaded, user, fetchTasks]);
 
   // ── Handlers ──
 
   function openNewTask() {
-    setEditingTask(null); // blank form
+    setEditingTask(null);
     setModalOpen(true);
   }
 
   function openEditTask(task: Task) {
-    setEditingTask(task); // pre-fill form with this task's data
+    setEditingTask(task);
     setModalOpen(true);
   }
 
-  function handleSave(saved: Task) {
-    if (editingTask) {
-      // Edit mode — replace existing task
-      setTasks((prev) => prev.map((t) => (t.id === saved.id ? saved : t)));
-    } else {
-      // New mode — prepend to list
-      setTasks((prev) => [saved, ...prev]);
+  // ── Save Task (Create/Update) ──
+
+  async function handleSave(saved: Task) {
+    try {
+      const isEdit = !!saved.id;
+      const url = isEdit ? `/api/tasks/${saved.id}` : "/api/tasks";
+      const method = isEdit ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(saved),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save task");
+      }
+
+      const data = await response.json();
+
+      // Update local state
+      if (isEdit) {
+        setTasks((prev) => prev.map((t) => (t.id === saved.id ? data : t)));
+      } else {
+        setTasks((prev) => [data, ...prev]);
+      }
+    } catch (error) {
+      console.error("❌ Error saving task:", error);
+      alert(error instanceof Error ? error.message : "Failed to save task");
     }
   }
 
-  function toggleTask(id: string) {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, status: t.status === "done" ? "todo" : "done" }
-          : t,
-      ),
-    );
+  // ── Toggle Task Status ──
+
+  async function toggleTask(id: string) {
+    try {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "toggle-status" }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to toggle task");
+      }
+
+      const data = await response.json();
+      setTasks((prev) => prev.map((t) => (t.id === id ? data : t)));
+    } catch (error) {
+      console.error("❌ Error toggling task:", error);
+      alert(error instanceof Error ? error.message : "Failed to toggle task");
+    }
   }
 
-  function deleteTask(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+  // ── Delete Task ──
+
+  async function deleteTask(id: string) {
+    if (!confirm("Are you sure you want to delete this task?")) return;
+
+    try {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to delete task");
+      }
+
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+    } catch (error) {
+      console.error("❌ Error deleting task:", error);
+      alert(error instanceof Error ? error.message : "Failed to delete task");
+    }
   }
 
   // ── Derived ──
@@ -569,7 +571,8 @@ export default function TasksPage() {
     return (
       (!q ||
         t.title.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q)) &&
+        t.description?.toLowerCase().includes(q) ||
+        t.tags?.some((tag) => tag.toLowerCase().includes(q))) &&
       (filterStatus === "all" || t.status === filterStatus) &&
       (filterPriority === "all" || t.priority === filterPriority)
     );
@@ -591,6 +594,38 @@ export default function TasksPage() {
     setFilterStatus("all");
     setFilterPriority("all");
   }
+
+  // ── Loading State ──
+
+  if (!isLoaded || loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+          <p className="text-sm text-muted-foreground">Loading tasks...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error State ──
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
+          <h3 className="text-lg font-semibold">Failed to load tasks</h3>
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button onClick={fetchTasks} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main Render ──
 
   return (
     <TooltipProvider>
@@ -787,7 +822,7 @@ export default function TasksPage() {
                     key={task.id}
                     task={task}
                     onToggle={toggleTask}
-                    onEdit={openEditTask} // passes full task object → modal pre-fills
+                    onEdit={openEditTask}
                     onDelete={deleteTask}
                   />
                 ))}
@@ -807,12 +842,12 @@ export default function TasksPage() {
         </ScrollArea>
       </div>
 
-      {/* ── Reusable Task Form Modal ── */}
+      {/* ── Task Form Modal ── */}
       <TaskFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
-        task={editingTask} // null → new, Task → edit (pre-filled)
+        task={editingTask}
       />
     </TooltipProvider>
   );
