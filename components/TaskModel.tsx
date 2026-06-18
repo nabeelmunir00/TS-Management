@@ -198,6 +198,7 @@ export function TaskFormModal({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showAIBadge, setShowAIBadge] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // ── Calendar state ──
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -342,15 +343,21 @@ export function TaskFormModal({
   function handleSave() {
     if (!form.title.trim()) return;
 
-    const saved: Task = {
-      ...form,
-      _id: task?._id ?? Date.now().toString(),
-      createdAt: task?.createdAt ?? new Date().toISOString().split("T")[0],
-      updatedAt: new Date().toISOString().split("T")[0],
-    };
+    setIsSaving(true); // 🔥 Loader start
 
-    onSave(saved);
-    onClose();
+    // Simulate async operation
+    setTimeout(() => {
+      const saved: Task = {
+        ...form,
+        _id: task?._id ?? Date.now().toString(),
+        createdAt: task?.createdAt ?? new Date().toISOString().split("T")[0],
+        updatedAt: new Date().toISOString().split("T")[0],
+      };
+
+      onSave(saved);
+      setIsSaving(false);
+      onClose();
+    }, 800); // 800ms delay for demo, replace with actual API call
   }
 
   const isValid = form.title.trim().length > 0;
@@ -898,11 +905,16 @@ export function TaskFormModal({
           </Button>
           <Button
             size="sm"
-            disabled={!isValid || isGenerating}
+            disabled={!isValid || isGenerating || isSaving}
             onClick={handleSave}
             className="h-9 text-xs px-6 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white disabled:opacity-40 transition-all rounded-lg shadow-sm"
           >
-            {isGenerating ? (
+            {isSaving ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                {isEditMode ? "Saving..." : "Creating..."}
+              </>
+            ) : isGenerating ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                 Generating...

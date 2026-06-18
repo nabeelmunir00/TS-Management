@@ -55,6 +55,7 @@ import { Separator } from "@/components/ui/separator";
 
 import { TaskFormModal } from "@/components/TaskModel";
 import type { Task, Priority, TaskStatus } from "@/components/TaskModel";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -245,7 +246,7 @@ function TaskCard({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => onDelete(task._id)}
+                  onClick={() => onDelete(task._id || task.id)}
                   className="text-xs gap-2 text-destructive cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -419,6 +420,9 @@ export default function TasksPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ── Fetch Tasks ──
   const fetchTasks = useCallback(async () => {
@@ -479,11 +483,18 @@ export default function TasksPage() {
 
       const data = await res.json();
 
+      // 🔥 IMPORTANT: UI update without page refresh
       if (isEdit) {
+        // Edit: update existing task
         setTasks((prev) => prev.map((t) => (t._id === saved._id ? data : t)));
+        await fetchTasks();
       } else {
+        // Create: add new task at top
         setTasks((prev) => [data, ...prev]);
+        await fetchTasks();
       }
+
+      // Modal close already handled in TaskFormModal
     } catch (err) {
       console.error("❌ Save error:", err);
       alert(err instanceof Error ? err.message : "Failed to save task");
@@ -508,17 +519,36 @@ export default function TasksPage() {
     }
   };
 
-  const deleteTask = async (id: string) => {
-    if (!confirm("Delete this task?")) return;
+  // Old deleteTask ko replace karein:
+  const deleteTask = (id: string) => {
+    const task = tasks.find((t) => t._id === id || t.id === id);
+    if (task) {
+      setTaskToDelete(task);
+      setDeleteModalOpen(true);
+    }
+  };
+
+  // New handleDeleteConfirm function add karein:
+  const handleDeleteConfirm = async () => {
+    if (!taskToDelete) return;
+
+    setIsDeleting(true);
 
     try {
+      const id = taskToDelete._id || taskToDelete.id;
       const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+
       if (!res.ok) throw new Error("Failed to delete task");
 
-      setTasks((prev) => prev.filter((t) => t.id !== id));
+      // 🔥 UI update without page refresh
+      setTasks((prev) => prev.filter((t) => (t._id || t.id) !== id));
+      setDeleteModalOpen(false);
+      setTaskToDelete(null);
     } catch (err) {
       console.error("❌ Delete error:", err);
       alert(err instanceof Error ? err.message : "Failed to delete task");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -781,6 +811,16 @@ export default function TasksPage() {
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
         task={editingTask}
+      />
+      <DeleteConfirmModal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setTaskToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title={taskToDelete?.title || "Untitled Task"}
+        isLoading={isDeleting}
       />
     </TooltipProvider>
   );
