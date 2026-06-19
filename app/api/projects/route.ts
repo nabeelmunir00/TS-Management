@@ -3,7 +3,6 @@ import { auth } from "@clerk/nextjs/server";
 import connectDB from "@/lib/db";
 import Project from "@/lib/models/Project";
 
-// ─── GET: Fetch all projects ──────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -15,9 +14,9 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search");
-    const status = searchParams.get("status"); // active, archived, all
-    const priority = searchParams.get("priority"); // Not in model, will handle later
-    const favorite = searchParams.get("favorite"); // true/false
+    const status = searchParams.get("status");
+    const priority = searchParams.get("priority");
+    const favorite = searchParams.get("favorite");
 
     let query: any = { userId };
 
@@ -35,8 +34,18 @@ export async function GET(req: NextRequest) {
       query.isArchived = true;
     } else if (status === "active") {
       query.isArchived = false;
-    } else {
-      // 'all' - don't filter
+    } else if (status === "on-hold") {
+      query.isArchived = false;
+      query.status = "on-hold"; // Not in model, will be handled in frontend
+    } else if (status === "completed") {
+      query.isArchived = false;
+      query.status = "completed"; // Not in model, will be handled in frontend
+    }
+    // 'all' - don't filter
+
+    // Priority filter
+    if (priority && priority !== "all") {
+      query.priority = priority;
     }
 
     // Favorite filter
@@ -56,13 +65,17 @@ export async function GET(req: NextRequest) {
       description: project.description || "",
       color: project.color || "#6366f1",
       icon: project.icon || "",
-      status: project.isArchived ? "archived" : "active",
-      priority: "medium", // Default since not in model
+      status: project.status || "active",
+      priority: project.priority || "medium",
       isStarred: project.isFavorite || false,
       isArchived: project.isArchived || false,
       tags: project.tags || [],
-      startDate: project.startDate,
-      endDate: project.endDate,
+      startDate: project.startDate
+        ? project.startDate.toISOString().split("T")[0]
+        : undefined,
+      endDate: project.endDate
+        ? project.endDate.toISOString().split("T")[0]
+        : undefined,
       teamMembers: project.teamMembers || [],
       tasksCount: project.tasksCount || 0,
       completedTasks: project.completedTasks || 0,
@@ -80,7 +93,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ─── POST: Create new project ─────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -92,13 +104,13 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // Map frontend fields to model fields
     const projectData = {
       userId,
       name: body.name,
       description: body.description || "",
       color: body.color || "#6366f1",
       icon: body.icon || "",
+      priority: body.priority || "medium",
       isFavorite: body.isStarred || body.isFavorite || false,
       isArchived: body.status === "archived" || false,
       tags: body.tags || [],
@@ -107,13 +119,11 @@ export async function POST(req: NextRequest) {
       teamMembers: body.teamMembers || [],
       tasksCount: body.tasksCount || 0,
       completedTasks: body.completedTasks || 0,
-      updatedAt: new Date(),
     };
 
     const project = new Project(projectData);
     await project.save();
 
-    // Transform response
     const transformedProject = {
       _id: project._id.toString(),
       id: project._id.toString(),
@@ -122,7 +132,7 @@ export async function POST(req: NextRequest) {
       color: project.color || "#6366f1",
       icon: project.icon || "",
       status: project.isArchived ? "archived" : "active",
-      priority: "medium",
+      priority: project.priority || "medium",
       isStarred: project.isFavorite || false,
       isArchived: project.isArchived || false,
       tags: project.tags || [],

@@ -1,29 +1,17 @@
+// app/projects/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   Search,
-  MoreVertical,
-  Edit,
-  Trash2,
-  Copy,
-  Archive,
   FolderOpen,
-  FolderPlus,
-  Users,
-  CalendarDays,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
   LayoutGrid,
   ListFilter,
   SlidersHorizontal,
   X,
   Loader2,
-  GitBranch,
-  Star,
-  StarOff,
+  AlertCircle,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 
@@ -37,17 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Progress } from "@/components/ui/progress";
 import {
   Tooltip,
   TooltipContent,
@@ -55,668 +33,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-interface Project {
-  _id: string;
-  id?: string;
-  name: string;
-  description?: string;
-  color?: string;
-  icon?: string;
-  status: "active" | "completed" | "archived" | "on-hold";
-  priority: "low" | "medium" | "high";
-  startDate?: string;
-  endDate?: string;
-  teamMembers?: { name: string; avatar?: string; role?: string }[];
-  tasksCount?: number;
-  completedTasks?: number;
-  tags?: string[];
-  isStarred?: boolean;
-  createdAt: string;
-  updatedAt?: string;
-}
+import { Project } from "@/types/project";
+import { STATUS_CHIPS } from "@/constants/project";
+import { ProjectCard } from "@/components/ProjectCard";
+import { ProjectFormModal } from "@/components/ProjectFormModal";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 
 type ProjectView = "list" | "grid";
-
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-const PROJECT_COLORS = [
-  "#8B5CF6", // Violet
-  "#EC4899", // Pink
-  "#3B82F6", // Blue
-  "#10B981", // Emerald
-  "#F59E0B", // Amber
-  "#EF4444", // Red
-  "#6366F1", // Indigo
-  "#14B8A6", // Teal
-];
-
-const STATUS_CONFIG: Record<
-  Project["status"],
-  { label: string; badge: string; dot: string }
-> = {
-  active: {
-    label: "Active",
-    badge: "bg-emerald-50 text-emerald-600 border-emerald-200",
-    dot: "bg-emerald-500",
-  },
-  completed: {
-    label: "Completed",
-    badge: "bg-blue-50 text-blue-600 border-blue-200",
-    dot: "bg-blue-500",
-  },
-  archived: {
-    label: "Archived",
-    badge: "bg-slate-100 text-slate-600 border-slate-200",
-    dot: "bg-slate-400",
-  },
-  "on-hold": {
-    label: "On Hold",
-    badge: "bg-amber-50 text-amber-600 border-amber-200",
-    dot: "bg-amber-500",
-  },
-};
-
-const PRIORITY_CONFIG: Record<
-  Project["priority"],
-  { label: string; dot: string }
-> = {
-  high: { label: "High", dot: "bg-red-500" },
-  medium: { label: "Medium", dot: "bg-amber-500" },
-  low: { label: "Low", dot: "bg-emerald-500" },
-};
-
-// ─── Project Card ──────────────────────────────────────────────────────────
-
-function ProjectCard({
-  project,
-  onEdit,
-  onDelete,
-  onToggleStar,
-  view = "grid",
-}: {
-  project: Project;
-  onEdit: (project: Project) => void;
-  onDelete: (id: string) => void;
-  onToggleStar: (id: string) => void;
-  view?: ProjectView;
-}) {
-  const progress = project.tasksCount
-    ? Math.round(((project.completedTasks || 0) / project.tasksCount) * 100)
-    : 0;
-
-  const statusInfo = STATUS_CONFIG[project.status];
-
-  if (view === "list") {
-    return (
-      <div
-        className={cn(
-          "group relative bg-card border rounded-lg p-4 transition-all",
-          "hover:border-violet-200 hover:shadow-sm",
-          project.status === "archived" && "opacity-60",
-        )}
-      >
-        <div className="flex items-center gap-4">
-          {/* Color indicator */}
-          <div
-            className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-white text-lg font-semibold"
-            style={{ backgroundColor: project.color || PROJECT_COLORS[0] }}
-          >
-            {project.name.charAt(0).toUpperCase()}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium truncate">{project.name}</h3>
-              {project.isStarred && (
-                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
-              )}
-              <Badge
-                variant="outline"
-                className={cn("text-[10px]", statusInfo.badge)}
-              >
-                <span
-                  className={cn(
-                    "w-1.5 h-1.5 rounded-full mr-1",
-                    statusInfo.dot,
-                  )}
-                />
-                {statusInfo.label}
-              </Badge>
-              <Badge variant="outline" className="text-[10px] capitalize">
-                {project.priority}
-              </Badge>
-            </div>
-            {project.description && (
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                {project.description}
-              </p>
-            )}
-          </div>
-
-          {/* Progress */}
-          <div className="w-32">
-            <div className="flex justify-between text-[10px] text-muted-foreground">
-              <span>Progress</span>
-              <span>{progress}%</span>
-            </div>
-            <Progress value={progress} className="h-1.5" />
-          </div>
-
-          {/* Team */}
-          {project.teamMembers && project.teamMembers.length > 0 && (
-            <div className="flex items-center -space-x-2">
-              {project.teamMembers.slice(0, 3).map((member, i) => (
-                <Avatar key={i} className="w-6 h-6 border-2 border-background">
-                  <AvatarImage src={member.avatar} alt={member.name} />
-                  <AvatarFallback className="text-[8px] bg-violet-100 text-violet-700">
-                    {member.name.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-              ))}
-              {project.teamMembers.length > 3 && (
-                <Avatar className="w-6 h-6 border-2 border-background bg-muted text-[8px]">
-                  <AvatarFallback>
-                    +{project.teamMembers.length - 3}
-                  </AvatarFallback>
-                </Avatar>
-              )}
-            </div>
-          )}
-
-          {/* Actions */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              >
-                <MoreVertical className="w-3.5 h-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={() => onToggleStar(project._id || project.id!)}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                {project.isStarred ? (
-                  <StarOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Star className="w-3.5 h-3.5" />
-                )}
-                {project.isStarred ? "Unstar" : "Star"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onEdit(project)}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                <Edit className="w-3.5 h-3.5" /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
-                <Copy className="w-3.5 h-3.5" /> Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
-                <Archive className="w-3.5 h-3.5" /> Archive
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDelete(project._id || project.id!)}
-                className="text-xs gap-2 text-destructive cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    );
-  }
-
-  // Grid View
-  return (
-    <div
-      className={cn(
-        "group relative bg-card border rounded-lg p-4 transition-all",
-        "hover:border-violet-200 hover:shadow-sm hover:-translate-y-0.5",
-        project.status === "archived" && "opacity-60",
-      )}
-    >
-      {/* Color bar */}
-      <div
-        className="absolute top-0 left-0 right-0 h-1 rounded-t-lg"
-        style={{ backgroundColor: project.color || PROJECT_COLORS[0] }}
-      />
-
-      <div className="pt-2">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-sm font-medium truncate">{project.name}</h3>
-              {project.isStarred && (
-                <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
-              )}
-            </div>
-            {project.description && (
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                {project.description}
-              </p>
-            )}
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              >
-                <MoreVertical className="w-3.5 h-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={() => onToggleStar(project._id || project.id!)}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                {project.isStarred ? (
-                  <StarOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Star className="w-3.5 h-3.5" />
-                )}
-                {project.isStarred ? "Unstar" : "Star"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onEdit(project)}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                <Edit className="w-3.5 h-3.5" /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
-                <Copy className="w-3.5 h-3.5" /> Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
-                <Archive className="w-3.5 h-3.5" /> Archive
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDelete(project._id || project.id!)}
-                className="text-xs gap-2 text-destructive cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Badges */}
-        <div className="flex flex-wrap items-center gap-1.5 mt-3">
-          <Badge
-            variant="outline"
-            className={cn("text-[10px]", statusInfo.badge)}
-          >
-            <span
-              className={cn("w-1.5 h-1.5 rounded-full mr-1", statusInfo.dot)}
-            />
-            {statusInfo.label}
-          </Badge>
-          <Badge variant="outline" className="text-[10px] capitalize">
-            {project.priority}
-          </Badge>
-          {project.tags?.slice(0, 2).map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-[10px]">
-              #{tag}
-            </Badge>
-          ))}
-        </div>
-
-        {/* Progress */}
-        <div className="mt-3">
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>Progress</span>
-            <span>{progress}%</span>
-          </div>
-          <Progress value={progress} className="h-1.5 mt-1" />
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between mt-3 pt-3 border-t">
-          <div className="flex items-center gap-2">
-            {project.teamMembers && project.teamMembers.length > 0 && (
-              <div className="flex items-center -space-x-2">
-                {project.teamMembers.slice(0, 2).map((member, i) => (
-                  <Avatar
-                    key={i}
-                    className="w-5 h-5 border-2 border-background"
-                  >
-                    <AvatarImage src={member.avatar} alt={member.name} />
-                    <AvatarFallback className="text-[7px] bg-violet-100 text-violet-700">
-                      {member.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-                {project.teamMembers.length > 2 && (
-                  <Avatar className="w-5 h-5 border-2 border-background bg-muted text-[7px]">
-                    <AvatarFallback>
-                      +{project.teamMembers.length - 2}
-                    </AvatarFallback>
-                  </Avatar>
-                )}
-              </div>
-            )}
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-              <GitBranch className="w-3 h-3" />
-              {project.tasksCount || 0} tasks
-            </span>
-          </div>
-          {project.endDate && (
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-              <CalendarDays className="w-3 h-3" />
-              {new Date(project.endDate).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Project Form Modal ──────────────────────────────────────────────────
-
-function ProjectFormModal({
-  open,
-  onClose,
-  onSave,
-  project = null,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: (project: Project) => void;
-  project?: Project | null;
-}) {
-  const isEdit = !!project;
-  const [form, setForm] = useState<Partial<Project>>({
-    name: "",
-    description: "",
-    status: "active",
-    priority: "medium",
-    color: PROJECT_COLORS[0],
-    tags: [],
-    startDate: new Date().toISOString().split("T")[0],
-    endDate: "",
-    teamMembers: [],
-  });
-  const [tagInput, setTagInput] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setForm(
-        project || {
-          name: "",
-          description: "",
-          status: "active",
-          priority: "medium",
-          color: PROJECT_COLORS[0],
-          tags: [],
-          startDate: new Date().toISOString().split("T")[0],
-          endDate: "",
-          teamMembers: [],
-        },
-      );
-      setTagInput("");
-    }
-  }, [open, project]);
-
-  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && tagInput.trim()) {
-      e.preventDefault();
-      const normalized = tagInput.trim().toLowerCase().replace(/\s+/g, "-");
-      if (!form.tags?.includes(normalized)) {
-        setForm((f) => ({ ...f, tags: [...(f.tags || []), normalized] }));
-      }
-      setTagInput("");
-    }
-  };
-
-  const removeTag = (tag: string) => {
-    setForm((f) => ({ ...f, tags: f.tags?.filter((t) => t !== tag) }));
-  };
-
-  const handleSubmit = () => {
-    if (!form.name?.trim()) return;
-    setIsSaving(true);
-
-    const saved: Project = {
-      _id: project?._id || Date.now().toString(),
-      id: project?.id || Date.now().toString(),
-      name: form.name!,
-      description: form.description || "",
-      status: form.status as Project["status"],
-      priority: form.priority as Project["priority"],
-      color: form.color,
-      tags: form.tags || [],
-      startDate: form.startDate,
-      endDate: form.endDate,
-      teamMembers: form.teamMembers || [],
-      tasksCount: 0,
-      completedTasks: 0,
-      isStarred: false,
-      createdAt: project?.createdAt || new Date().toISOString().split("T")[0],
-    };
-
-    setTimeout(() => {
-      onSave(saved);
-      setIsSaving(false);
-      onClose();
-    }, 600);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="sm:max-w-[550px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FolderPlus className="w-5 h-5 text-violet-500" />
-            {isEdit ? "Edit Project" : "New Project"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? "Update the project details below."
-              : "Create a new project to organize your tasks."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
-          {/* Name */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">
-              Project Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. DevHub v2"
-              className="text-sm h-10"
-              autoFocus
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Description</Label>
-            <Textarea
-              value={form.description || ""}
-              onChange={(e) =>
-                setForm({ ...form, description: e.target.value })
-              }
-              placeholder="What is this project about?"
-              className="text-sm resize-none min-h-[60px]"
-              rows={2}
-            />
-          </div>
-
-          {/* Color + Status + Priority */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Color</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {PROJECT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setForm({ ...form, color })}
-                    className={cn(
-                      "w-6 h-6 rounded-full transition-all border-2",
-                      form.color === color
-                        ? "border-violet-600 scale-110"
-                        : "border-transparent hover:scale-105",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v: Project["status"]) =>
-                  setForm({ ...form, status: v })
-                }
-              >
-                <SelectTrigger className="text-sm h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on-hold">On Hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Priority</Label>
-              <Select
-                value={form.priority}
-                onValueChange={(v: Project["priority"]) =>
-                  setForm({ ...form, priority: v })
-                }
-              >
-                <SelectTrigger className="text-sm h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="high">🔴 High</SelectItem>
-                  <SelectItem value="medium">🟡 Medium</SelectItem>
-                  <SelectItem value="low">🟢 Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Start Date</Label>
-              <Input
-                type="date"
-                value={form.startDate || ""}
-                onChange={(e) =>
-                  setForm({ ...form, startDate: e.target.value })
-                }
-                className="text-sm h-10"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">End Date</Label>
-              <Input
-                type="date"
-                value={form.endDate || ""}
-                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                className="text-sm h-10"
-              />
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Tags</Label>
-            {(form.tags?.length || 0) > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {form.tags?.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="gap-1 text-[11px] bg-violet-50 text-violet-600 border-violet-200"
-                  >
-                    #{tag}
-                    <button
-                      onClick={() => removeTag(tag)}
-                      className="hover:text-violet-900 transition-colors"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <Input
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={handleTagKeyDown}
-              placeholder="Type tag and press Enter..."
-              className="text-sm h-10"
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!form.name?.trim() || isSaving}
-            className="bg-violet-600 hover:bg-violet-700 text-white"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : isEdit ? (
-              "Update Project"
-            ) : (
-              "Create Project"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
   const { user, isLoaded } = useUser();
@@ -732,6 +56,11 @@ export default function ProjectsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  // Delete Modal States
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ── Fetch Projects ──
   const fetchProjects = useCallback(async () => {
@@ -773,14 +102,57 @@ export default function ProjectsPage() {
     setModalOpen(true);
   };
 
+  const deleteProject = (id: string) => {
+    const project = projects.find((p) => (p._id || p.id) === id);
+    if (project) {
+      setProjectToDelete(project);
+      setDeleteModalOpen(true);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!projectToDelete) return;
+
+    setIsDeleting(true);
+
+    try {
+      const id = projectToDelete._id || projectToDelete.id!;
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Failed to delete project");
+
+      setProjects((prev) => prev.filter((p) => (p._id || p.id) !== id));
+      setDeleteModalOpen(false);
+      setProjectToDelete(null);
+    } catch (err) {
+      console.error("❌ Delete error:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete project");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleSave = async (saved: Project) => {
     try {
-      const isEdit = !!saved._id;
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(saved),
-      });
+      let res;
+
+      if (editingProject) {
+        // Edit: PATCH request with ID
+        res = await fetch(`/api/projects/${saved._id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(saved),
+        });
+      } else {
+        // Create: POST request
+        res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(saved),
+        });
+      }
 
       if (!res.ok) {
         const err = await res.json();
@@ -789,30 +161,18 @@ export default function ProjectsPage() {
 
       const data = await res.json();
 
-      if (isEdit) {
+      if (editingProject) {
         setProjects((prev) =>
           prev.map((p) => (p._id === saved._id ? data : p)),
         );
       } else {
         setProjects((prev) => [data, ...prev]);
       }
+
+      setEditingProject(null);
     } catch (err) {
       console.error("❌ Save error:", err);
       alert(err instanceof Error ? err.message : "Failed to save project");
-    }
-  };
-
-  const deleteProject = async (id: string) => {
-    if (!confirm("Delete this project?")) return;
-
-    try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete project");
-
-      setProjects((prev) => prev.filter((p) => (p._id || p.id) !== id));
-    } catch (err) {
-      console.error("❌ Delete error:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete project");
     }
   };
 
@@ -836,22 +196,32 @@ export default function ProjectsPage() {
   // ── Derived ──
   const filtered = projects.filter((p) => {
     const q = search.toLowerCase();
-    return (
-      (!q ||
-        p.name.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.tags?.some((tag) => tag.toLowerCase().includes(q))) &&
-      (filterStatus === "all" || p.status === filterStatus) &&
-      (filterPriority === "all" || p.priority === filterPriority)
-    );
+    const matchesSearch =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q) ||
+      p.tags?.some((tag) => tag.toLowerCase().includes(q));
+
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "archived"
+        ? p.isArchived === true
+        : p.status === filterStatus);
+
+    const matchesPriority =
+      filterPriority === "all" || p.priority === filterPriority;
+
+    return matchesSearch && matchesStatus && matchesPriority;
   });
 
   const counts = {
     all: projects.length,
-    active: projects.filter((p) => p.status === "active").length,
-    "on-hold": projects.filter((p) => p.status === "on-hold").length,
+    active: projects.filter((p) => !p.isArchived && p.status === "active")
+      .length,
+    "on-hold": projects.filter((p) => !p.isArchived && p.status === "on-hold")
+      .length,
     completed: projects.filter((p) => p.status === "completed").length,
-    archived: projects.filter((p) => p.status === "archived").length,
+    archived: projects.filter((p) => p.isArchived === true).length,
   };
 
   const hasFilters =
@@ -899,7 +269,7 @@ export default function ProjectsPage() {
             </h1>
             <p className="text-xs text-muted-foreground">
               {counts.active} active · {counts["on-hold"]} on hold ·{" "}
-              {counts.completed} completed
+              {counts.completed} completed · {counts.archived} archived
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -945,13 +315,7 @@ export default function ProjectsPage() {
 
         {/* Status chips */}
         <div className="flex items-center gap-1.5 px-6 py-2 border-b overflow-x-auto shrink-0">
-          {[
-            { key: "all", label: "All" },
-            { key: "active", label: "Active" },
-            { key: "on-hold", label: "On Hold" },
-            { key: "completed", label: "Completed" },
-            { key: "archived", label: "Archived" },
-          ].map((chip) => (
+          {STATUS_CHIPS.map((chip) => (
             <button
               key={chip.key}
               onClick={() => setFilterStatus(chip.key)}
@@ -1105,9 +469,26 @@ export default function ProjectsPage() {
       {/* Project Form Modal */}
       <ProjectFormModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingProject(null);
+        }}
         onSave={handleSave}
         project={editingProject}
+      />
+
+      {/* Delete Modal */}
+      <DeleteConfirmModal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title={projectToDelete?.name || "Untitled Project"}
+        description="This will permanently delete the project and all its associated tasks."
+        isLoading={isDeleting}
+        type="project"
       />
     </TooltipProvider>
   );

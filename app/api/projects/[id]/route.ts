@@ -3,13 +3,19 @@ import { auth } from "@clerk/nextjs/server";
 import connectDB from "@/lib/db";
 import Project from "@/lib/models/Project";
 
+async function getTaskId(context: { params: { id: string } }) {
+  const params = await context.params;
+  return params.id;
+}
+
 // ─── GET: Single project ──────────────────────────────────────────────────
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -17,7 +23,7 @@ export async function GET(
     await connectDB();
 
     const project = await Project.findOne({
-      _id: params.id,
+      _id: id,
       userId,
     }).lean();
 
@@ -34,7 +40,7 @@ export async function GET(
       color: project.color || "#6366f1",
       icon: project.icon || "",
       status: project.isArchived ? "archived" : "active",
-      priority: "medium",
+      priority: project.priority || "medium",
       isStarred: project.isFavorite || false,
       isArchived: project.isArchived || false,
       tags: project.tags || [],
@@ -64,10 +70,11 @@ export async function GET(
 // ─── PATCH: Update project ────────────────────────────────────────────────
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -79,7 +86,7 @@ export async function PATCH(
 
     // Handle special actions
     if (action === "toggle-star") {
-      const project = await Project.findOne({ _id: params.id, userId });
+      const project = await Project.findOne({ _id: id, userId });
       if (!project) {
         return NextResponse.json(
           { error: "Project not found" },
@@ -98,8 +105,8 @@ export async function PATCH(
         description: project.description || "",
         color: project.color || "#6366f1",
         icon: project.icon || "",
-        status: project.isArchived ? "archived" : "active",
-        priority: "medium",
+        status: project.status,
+        priority: project.priority || "medium",
         isStarred: project.isFavorite || false,
         isArchived: project.isArchived || false,
         tags: project.tags || [],
@@ -120,7 +127,7 @@ export async function PATCH(
     }
 
     if (action === "toggle-archive") {
-      const project = await Project.findOne({ _id: params.id, userId });
+      const project = await Project.findOne({ _id: id, userId });
       if (!project) {
         return NextResponse.json(
           { error: "Project not found" },
@@ -139,8 +146,8 @@ export async function PATCH(
         description: project.description || "",
         color: project.color || "#6366f1",
         icon: project.icon || "",
-        status: project.isArchived ? "archived" : "active",
-        priority: "medium",
+        status: project.status || "active",
+        priority: project.priority || "medium",
         isStarred: project.isFavorite || false,
         isArchived: project.isArchived || false,
         tags: project.tags || [],
@@ -160,33 +167,68 @@ export async function PATCH(
       return NextResponse.json(transformedProject);
     }
 
-    // Regular update
+    // ─── Regular Update ──────────────────────────────────────────────────
     const updateData: any = {
       updatedAt: new Date(),
     };
 
+    // Basic fields
     if (body.name !== undefined) updateData.name = body.name;
     if (body.description !== undefined)
       updateData.description = body.description;
     if (body.color !== undefined) updateData.color = body.color;
     if (body.icon !== undefined) updateData.icon = body.icon;
+
+    // 🔥 FIX: Priority - now properly stored in model
+    if (body.priority !== undefined) {
+      updateData.priority = body.priority;
+    }
+
+    // Tags and team members
     if (body.tags !== undefined) updateData.tags = body.tags;
     if (body.teamMembers !== undefined)
       updateData.teamMembers = body.teamMembers;
+
+    // Task counts
     if (body.tasksCount !== undefined) updateData.tasksCount = body.tasksCount;
     if (body.completedTasks !== undefined)
       updateData.completedTasks = body.completedTasks;
-    if (body.startDate !== undefined)
+
+    // Dates
+    if (body.startDate !== undefined) {
       updateData.startDate = body.startDate
         ? new Date(body.startDate)
         : undefined;
-    if (body.endDate !== undefined)
+    }
+    if (body.endDate !== undefined) {
       updateData.endDate = body.endDate ? new Date(body.endDate) : undefined;
-    if (body.isStarred !== undefined) updateData.isFavorite = body.isStarred;
-    if (body.isArchived !== undefined) updateData.isArchived = body.isArchived;
+    }
+    if (body.status !== undefined) {
+      // Map status to isArchived
+      updateData.status = body.status;
+    }
+
+    // 🔥 FIX: Status handling
+    if (body.status !== undefined) {
+      // Map status to isArchived
+      updateData.isArchived = body.status === "archived";
+    }
+
+    // Handle isArchived directly if provided
+    if (body.isArchived !== undefined) {
+      updateData.isArchived = body.isArchived;
+    }
+
+    // Handle favorite/starred
+    if (body.isStarred !== undefined) {
+      updateData.isFavorite = body.isStarred;
+    }
+
+    // Debug log
+    console.log("🔄 Update Data:", updateData);
 
     const project = await Project.findOneAndUpdate(
-      { _id: params.id, userId },
+      { _id: id, userId },
       updateData,
       { new: true, runValidators: true },
     ).lean();
@@ -195,6 +237,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    // Transform response
     const transformedProject = {
       _id: project._id.toString(),
       id: project._id.toString(),
@@ -202,8 +245,8 @@ export async function PATCH(
       description: project.description || "",
       color: project.color || "#6366f1",
       icon: project.icon || "",
-      status: project.isArchived ? "archived" : "active",
-      priority: "medium",
+      status: project.status || "active",
+      priority: project.priority || "medium",
       isStarred: project.isFavorite || false,
       isArchived: project.isArchived || false,
       tags: project.tags || [],
@@ -233,10 +276,11 @@ export async function PATCH(
 // ─── DELETE: Delete project ──────────────────────────────────────────────
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
+    const id = await getTaskId(context);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -244,7 +288,7 @@ export async function DELETE(
     await connectDB();
 
     const result = await Project.findOneAndDelete({
-      _id: params.id,
+      _id: id,
       userId,
     });
 
