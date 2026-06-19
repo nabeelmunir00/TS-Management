@@ -3,10 +3,12 @@ import connectDB from "@/lib/db";
 import ProjectModel from "@/lib/models/Project";
 import { Types } from "mongoose";
 import { ProjectStatus, ProjectPriority, IProject } from "@/lib/models/Project";
+import { v4 as uuidv4 } from "uuid";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface CreateProjectInput {
+  productId: string;
   userId: string;
   name: string;
   description?: string;
@@ -118,6 +120,7 @@ export async function createProject(data: CreateProjectInput) {
 
     // ✅ Prepare project data
     const projectData = {
+      projectId: `Project-${uuidv4().slice(0, 8).toUpperCase()}`,
       userId: data.userId,
       name: data.name.trim(),
       description: data.description?.trim() || "",
