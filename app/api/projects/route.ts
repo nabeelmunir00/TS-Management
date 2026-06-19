@@ -1,159 +1,198 @@
+// app/api/projects/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import connectDB from "@/lib/db";
-import Project from "@/lib/models/Project";
+import {
+  createProject,
+  getAllProjects,
+  getProjectStats,
+  getProjectsWithTaskStats,
+} from "@/lib/services/project-service";
+import { RateLimiter } from "@/lib/rate-limiter";
 
-export async function GET(req: NextRequest) {
+// ─── GET: Fetch Projects ──────────────────────────────────────────────────
+
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 },
+      );
     }
 
-    await connectDB();
+    // ✅ Rate Limiting
+    const rateLimitResult = await RateLimiter.check(`projects:${userId}`, {
+      maxRequests: 100,
+      windowMs: 60 * 1000,
+    });
 
-    const { searchParams } = new URL(req.url);
-    const search = searchParams.get("search");
-    const status = searchParams.get("status");
-    const priority = searchParams.get("priority");
-    const favorite = searchParams.get("favorite");
-
-    let query: any = { userId };
-
-    // Search filter
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { tags: { $regex: search, $options: "i" } },
-      ];
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: rateLimitResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          },
+        },
+      );
     }
 
-    // Status filter
-    if (status === "archived") {
-      query.isArchived = true;
-    } else if (status === "active") {
-      query.isArchived = false;
-    } else if (status === "on-hold") {
-      query.isArchived = false;
-      query.status = "on-hold"; // Not in model, will be handled in frontend
-    } else if (status === "completed") {
-      query.isArchived = false;
-      query.status = "completed"; // Not in model, will be handled in frontend
+    const searchParams = request.nextUrl.searchParams;
+
+    // ✅ Parse query parameters
+    const search = searchParams.get("search") || undefined;
+    const status = searchParams.get("status") || undefined;
+    const priority = searchParams.get("priority") || undefined;
+    const favorite = searchParams.get("favorite") === "true";
+    const stats = searchParams.get("stats") === "true";
+    const withTaskStats = searchParams.get("withTaskStats") === "true";
+
+    // ✅ Pagination
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 100);
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = (searchParams.get("sortOrder") || "desc") as
+      | "asc"
+      | "desc";
+
+    // ✅ Get statistics
+    if (stats) {
+      const statsResult = await getProjectStats(userId);
+      if (!statsResult.success) {
+        return NextResponse.json({ error: statsResult.error }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: statsResult.data,
+      });
     }
-    // 'all' - don't filter
 
-    // Priority filter
-    if (priority && priority !== "all") {
-      query.priority = priority;
+    // ✅ Get projects with task stats
+    if (withTaskStats) {
+      const result = await getProjectsWithTaskStats(userId);
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: result.data,
+      });
     }
 
-    // Favorite filter
-    if (favorite === "true") {
-      query.isFavorite = true;
+    // ✅ Get all projects
+    const result = await getAllProjects(userId, {
+      search,
+      status,
+      priority,
+      favorite,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
-    const projects = await Project.find(query)
-      .sort({ isFavorite: -1, updatedAt: -1 })
-      .lean();
-
-    // Transform to match frontend interface
-    const transformedProjects = projects.map((project) => ({
-      _id: project._id.toString(),
-      id: project._id.toString(),
-      name: project.name,
-      description: project.description || "",
-      color: project.color || "#6366f1",
-      icon: project.icon || "",
-      status: project.status || "active",
-      priority: project.priority || "medium",
-      isStarred: project.isFavorite || false,
-      isArchived: project.isArchived || false,
-      tags: project.tags || [],
-      startDate: project.startDate
-        ? project.startDate.toISOString().split("T")[0]
-        : undefined,
-      endDate: project.endDate
-        ? project.endDate.toISOString().split("T")[0]
-        : undefined,
-      teamMembers: project.teamMembers || [],
-      tasksCount: project.tasksCount || 0,
-      completedTasks: project.completedTasks || 0,
-      createdAt: project.createdAt.toISOString().split("T")[0],
-      updatedAt: project.updatedAt.toISOString().split("T")[0],
-    }));
-
-    return NextResponse.json(transformedProjects);
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      pagination: result.pagination,
+    });
   } catch (error) {
     console.error("❌ GET /api/projects error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch projects" },
+      {
+        error: "Failed to fetch projects",
+        details:
+          process.env.NODE_ENV === "development"
+            ? (error as Error).message
+            : undefined,
+      },
       { status: 500 },
     );
   }
 }
 
-export async function POST(req: NextRequest) {
+// ─── POST: Create Project ──────────────────────────────────────────────────
+
+export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 },
+      );
     }
 
-    await connectDB();
+    // ✅ Rate Limiting
+    const rateLimitResult = await RateLimiter.check(`projects:${userId}`, {
+      maxRequests: 30,
+      windowMs: 60 * 1000,
+    });
 
-    const body = await req.json();
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: rateLimitResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          },
+        },
+      );
+    }
 
-    const projectData = {
+    const body = await request.json();
+
+    // ✅ Validation
+    if (!body.name || !body.name.trim()) {
+      return NextResponse.json(
+        { error: "Project name is required" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ Create project
+    const result = await createProject({
+      ...body,
       userId,
-      name: body.name,
-      description: body.description || "",
-      color: body.color || "#6366f1",
-      icon: body.icon || "",
-      priority: body.priority || "medium",
-      isFavorite: body.isStarred || body.isFavorite || false,
-      isArchived: body.status === "archived" || false,
-      tags: body.tags || [],
-      startDate: body.startDate ? new Date(body.startDate) : undefined,
-      endDate: body.endDate ? new Date(body.endDate) : undefined,
-      teamMembers: body.teamMembers || [],
-      tasksCount: body.tasksCount || 0,
-      completedTasks: body.completedTasks || 0,
-    };
+    });
 
-    const project = new Project(projectData);
-    await project.save();
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
+    }
 
-    const transformedProject = {
-      _id: project._id.toString(),
-      id: project._id.toString(),
-      name: project.name,
-      description: project.description || "",
-      color: project.color || "#6366f1",
-      icon: project.icon || "",
-      status: project.isArchived ? "archived" : "active",
-      priority: project.priority || "medium",
-      isStarred: project.isFavorite || false,
-      isArchived: project.isArchived || false,
-      tags: project.tags || [],
-      startDate: project.startDate
-        ? project.startDate.toISOString().split("T")[0]
-        : undefined,
-      endDate: project.endDate
-        ? project.endDate.toISOString().split("T")[0]
-        : undefined,
-      teamMembers: project.teamMembers || [],
-      tasksCount: project.tasksCount || 0,
-      completedTasks: project.completedTasks || 0,
-      createdAt: project.createdAt.toISOString().split("T")[0],
-      updatedAt: project.updatedAt.toISOString().split("T")[0],
-    };
-
-    return NextResponse.json(transformedProject, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: result.data,
+        message: "Project created successfully",
+      },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("❌ POST /api/projects error:", error);
     return NextResponse.json(
-      { error: "Failed to create project" },
+      {
+        error: "Failed to create project",
+        details:
+          process.env.NODE_ENV === "development"
+            ? (error as Error).message
+            : undefined,
+      },
       { status: 500 },
     );
   }
