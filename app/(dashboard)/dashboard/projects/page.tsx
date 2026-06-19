@@ -1,7 +1,7 @@
 // app/projects/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   Search,
@@ -12,8 +12,10 @@ import {
   X,
   Loader2,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,17 @@ import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 
 type ProjectView = "list" | "grid";
 
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const PRIORITY_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "high", label: "🔴 High" },
+  { value: "medium", label: "🟡 Medium" },
+  { value: "low", label: "🟢 Low" },
+];
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function ProjectsPage() {
   const { user, isLoaded } = useUser();
 
@@ -56,6 +69,7 @@ export default function ProjectsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Delete Modal States
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -75,20 +89,30 @@ export default function ProjectsPage() {
       if (filterPriority !== "all") params.append("priority", filterPriority);
       if (search) params.append("search", search);
 
-      const res = await fetch(`/api/projects?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch projects");
+      const res = await fetch(`/api/projects?${params.toString()}`);
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch projects");
+      }
 
       const data = await res.json();
-      setProjects(data);
+
+      // Handle different response formats
+      const projectsData = data.data || data;
+      setProjects(Array.isArray(projectsData) ? projectsData : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load projects");
+      toast.error("Failed to load projects");
     } finally {
       setLoading(false);
     }
   }, [user?.id, filterStatus, filterPriority, search]);
 
   useEffect(() => {
-    if (user?.id) fetchProjects();
+    if (isLoaded && user?.id) {
+      fetchProjects();
+    }
   }, [isLoaded, user, fetchProjects]);
 
   // ── Handlers ──
@@ -121,24 +145,33 @@ export default function ProjectsPage() {
         method: "DELETE",
       });
 
-      if (!res.ok) throw new Error("Failed to delete project");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete project");
+      }
 
       setProjects((prev) => prev.filter((p) => (p._id || p.id) !== id));
       setDeleteModalOpen(false);
       setProjectToDelete(null);
+      toast.success("Project deleted successfully!");
     } catch (err) {
       console.error("❌ Delete error:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete project");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete project",
+      );
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleSave = async (saved: Project) => {
+    setIsSaving(true);
+
     try {
       let res;
+      const isEdit = !!saved._id;
 
-      if (editingProject) {
+      if (isEdit) {
         // Edit: PATCH request with ID
         res = await fetch(`/api/projects/${saved._id}`, {
           method: "PATCH",
@@ -155,24 +188,32 @@ export default function ProjectsPage() {
       }
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to save project");
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to save project");
       }
 
       const data = await res.json();
+      const savedProject = data.data || data;
 
-      if (editingProject) {
+      if (isEdit) {
         setProjects((prev) =>
-          prev.map((p) => (p._id === saved._id ? data : p)),
+          prev.map((p) => (p._id === saved._id ? savedProject : p)),
         );
+        toast.success("Project updated successfully!");
       } else {
-        setProjects((prev) => [data, ...prev]);
+        setProjects((prev) => [savedProject, ...prev]);
+        toast.success("Project created successfully!");
       }
 
+      setModalOpen(false);
       setEditingProject(null);
     } catch (err) {
       console.error("❌ Save error:", err);
-      alert(err instanceof Error ? err.message : "Failed to save project");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save project",
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -184,45 +225,99 @@ export default function ProjectsPage() {
         body: JSON.stringify({ action: "toggle-star" }),
       });
 
-      if (!res.ok) throw new Error("Failed to toggle star");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to toggle star");
+      }
 
       const data = await res.json();
-      setProjects((prev) => prev.map((p) => (p._id === id ? data : p)));
+      const updatedProject = data.data || data;
+
+      setProjects((prev) =>
+        prev.map((p) => (p._id === id ? updatedProject : p)),
+      );
+
+      toast.success(
+        updatedProject.isStarred
+          ? "⭐ Project starred!"
+          : "☆ Project unstarred",
+      );
     } catch (err) {
       console.error("❌ Toggle star error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to toggle star");
+    }
+  };
+
+  const toggleArchive = async (id: string) => {
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle-archive" }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to toggle archive");
+      }
+
+      const data = await res.json();
+      const updatedProject = data.data || data;
+
+      setProjects((prev) =>
+        prev.map((p) => (p._id === id ? updatedProject : p)),
+      );
+
+      toast.success(
+        updatedProject.isArchived
+          ? "📦 Project archived!"
+          : "📂 Project unarchived",
+      );
+    } catch (err) {
+      console.error("❌ Toggle archive error:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to toggle archive",
+      );
     }
   };
 
   // ── Derived ──
-  const filtered = projects.filter((p) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      !q ||
-      p.name.toLowerCase().includes(q) ||
-      p.description?.toLowerCase().includes(q) ||
-      p.tags?.some((tag) => tag.toLowerCase().includes(q));
+  const filtered = useMemo(() => {
+    return projects.filter((p) => {
+      const q = search.toLowerCase();
+      const matchesSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.tags?.some((tag) => tag.toLowerCase().includes(q));
 
-    const matchesStatus =
-      filterStatus === "all" ||
-      (filterStatus === "archived"
-        ? p.isArchived === true
-        : p.status === filterStatus);
+      const matchesStatus =
+        filterStatus === "all" ||
+        (filterStatus === "archived"
+          ? p.isArchived === true
+          : p.status === filterStatus && !p.isArchived);
 
-    const matchesPriority =
-      filterPriority === "all" || p.priority === filterPriority;
+      const matchesPriority =
+        filterPriority === "all" || p.priority === filterPriority;
 
-    return matchesSearch && matchesStatus && matchesPriority;
-  });
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
+  }, [projects, search, filterStatus, filterPriority]);
 
-  const counts = {
-    all: projects.length,
-    active: projects.filter((p) => !p.isArchived && p.status === "active")
-      .length,
-    "on-hold": projects.filter((p) => !p.isArchived && p.status === "on-hold")
-      .length,
-    completed: projects.filter((p) => p.status === "completed").length,
-    archived: projects.filter((p) => p.isArchived === true).length,
-  };
+  const counts = useMemo(
+    () => ({
+      all: projects.length,
+      active: projects.filter((p) => !p.isArchived && p.status === "active")
+        .length,
+      "on-hold": projects.filter((p) => !p.isArchived && p.status === "on-hold")
+        .length,
+      completed: projects.filter(
+        (p) => p.status === "completed" && !p.isArchived,
+      ).length,
+      archived: projects.filter((p) => p.isArchived === true).length,
+    }),
+    [projects],
+  );
 
   const hasFilters =
     filterStatus !== "all" || filterPriority !== "all" || search !== "";
@@ -231,13 +326,15 @@ export default function ProjectsPage() {
     setSearch("");
     setFilterStatus("all");
     setFilterPriority("all");
+    setShowFilters(false);
   };
 
   // ── Loading ──
   if (!isLoaded || loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        <p className="text-sm text-muted-foreground">Loading projects...</p>
       </div>
     );
   }
@@ -248,7 +345,13 @@ export default function ProjectsPage() {
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <AlertCircle className="w-12 h-12 text-destructive" />
         <p className="text-sm text-muted-foreground">{error}</p>
-        <Button onClick={fetchProjects} variant="outline" size="sm">
+        <Button
+          onClick={fetchProjects}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
           Try Again
         </Button>
       </div>
@@ -333,7 +436,7 @@ export default function ProjectsPage() {
                   filterStatus === chip.key ? "bg-white/20" : "bg-background",
                 )}
               >
-                {counts[chip.key as keyof typeof counts]}
+                {counts[chip.key as keyof typeof counts] || 0}
               </span>
             </button>
           ))}
@@ -384,10 +487,11 @@ export default function ProjectsPage() {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="high">🔴 High</SelectItem>
-                <SelectItem value="medium">🟡 Medium</SelectItem>
-                <SelectItem value="low">🟢 Low</SelectItem>
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {hasFilters && (
@@ -441,12 +545,13 @@ export default function ProjectsPage() {
                     onEdit={openEditProject}
                     onDelete={deleteProject}
                     onToggleStar={toggleStar}
+                    onToggleArchive={toggleArchive}
                     view="grid"
                   />
                 ))}
               </div>
             ) : (
-              <div className="space-y-2 ">
+              <div className="space-y-2">
                 {filtered.map((project) => (
                   <ProjectCard
                     key={project._id || project.id}
@@ -454,6 +559,7 @@ export default function ProjectsPage() {
                     onEdit={openEditProject}
                     onDelete={deleteProject}
                     onToggleStar={toggleStar}
+                    onToggleArchive={toggleArchive}
                     view="list"
                   />
                 ))}
@@ -475,6 +581,7 @@ export default function ProjectsPage() {
         }}
         onSave={handleSave}
         project={editingProject}
+        isLoading={isSaving}
       />
 
       {/* Delete Modal */}
