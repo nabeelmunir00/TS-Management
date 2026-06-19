@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   Search,
@@ -21,8 +20,10 @@ import {
   X,
   Clock3,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -158,18 +159,23 @@ function TaskCard({
   onToggle,
   onEdit,
   onDelete,
+  onDuplicate,
+  onArchive,
   compact = false,
 }: {
   task: Task;
   onToggle: (id: string) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (task: Task) => void;
+  onArchive: (id: string) => void;
   compact?: boolean;
 }) {
   const StatusIcon = STATUS_CONFIG[task.status].icon;
   const subtasksDone = task.subtasks?.filter((s) => s.done).length ?? 0;
   const subtasksTotal = task.subtasks?.length ?? 0;
   const overdue = isOverdue(task.dueDate || task.createdAt, task.status);
+  const taskId = task._id || task.id;
 
   return (
     <div
@@ -191,7 +197,7 @@ function TaskCard({
       <div className={cn("flex items-start gap-3", compact ? "pl-2" : "pl-3")}>
         {/* Toggle */}
         <button
-          onClick={() => onToggle(task._id || task.id)}
+          onClick={() => onToggle(taskId)}
           className="mt-0.5 shrink-0 text-muted-foreground hover:text-violet-500 transition-colors"
         >
           {task.status === "done" ? (
@@ -238,15 +244,21 @@ function TaskCard({
                 >
                   <Edit className="w-3.5 h-3.5" /> Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
+                <DropdownMenuItem
+                  onClick={() => onDuplicate(task)}
+                  className="text-xs gap-2 cursor-pointer"
+                >
                   <Copy className="w-3.5 h-3.5" /> Duplicate
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-xs gap-2 cursor-pointer">
+                <DropdownMenuItem
+                  onClick={() => onArchive(taskId)}
+                  className="text-xs gap-2 cursor-pointer"
+                >
                   <Archive className="w-3.5 h-3.5" /> Archive
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => onDelete(task._id || task.id)}
+                  onClick={() => onDelete(taskId)}
                   className="text-xs gap-2 text-destructive cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -328,9 +340,11 @@ function TaskCard({
                   )}
                 </div>
               )}
-              <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded">
-                {task.project}
-              </span>
+              {task.project?.name && (
+                <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                  {task.project.name}
+                </span>
+              )}
             </div>
             <span
               className={cn(
@@ -355,11 +369,15 @@ function BoardView({
   onToggle,
   onEdit,
   onDelete,
+  onDuplicate,
+  onArchive,
 }: {
   tasks: Task[];
   onToggle: (id: string) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (task: Task) => void;
+  onArchive: (id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -387,11 +405,13 @@ function BoardView({
               ) : (
                 colTasks.map((task) => (
                   <TaskCard
-                    key={task.id}
+                    key={task._id || task.id}
                     task={task}
                     onToggle={onToggle}
                     onEdit={onEdit}
                     onDelete={onDelete}
+                    onDuplicate={onDuplicate}
+                    onArchive={onArchive}
                     compact
                   />
                 ))
@@ -423,6 +443,7 @@ export default function TasksPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isToggling, setIsToggling] = useState<string | null>(null);
 
   // ── Fetch Tasks ──
   const fetchTasks = useCallback(async () => {
@@ -437,20 +458,27 @@ export default function TasksPage() {
       if (filterPriority !== "all") params.append("priority", filterPriority);
       if (search) params.append("search", search);
 
-      const res = await fetch(`/api/tasks?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch tasks");
+      const res = await fetch(`/api/tasks?${params.toString()}`);
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch tasks");
+      }
 
       const data = await res.json();
-      setTasks(data);
+      setTasks(data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tasks");
+      toast.error("Failed to load tasks");
     } finally {
       setLoading(false);
     }
   }, [user?.id, filterStatus, filterPriority, search]);
 
   useEffect(() => {
-    if (isLoaded && user?.id) fetchTasks();
+    if (isLoaded && user?.id) {
+      fetchTasks();
+    }
   }, [isLoaded, user, fetchTasks]);
 
   // ── Handlers ──
@@ -465,11 +493,10 @@ export default function TasksPage() {
   };
 
   const handleSave = async (saved: Task) => {
-    debugger;
     try {
       const isEdit = !!saved._id;
-      const url = editingTask ? `/api/tasks/${saved._id}` : "/api/tasks";
-      const method = editingTask ? "PUT" : "POST";
+      const url = isEdit ? `/api/tasks/${saved._id}` : "/api/tasks";
+      const method = isEdit ? "PUT" : "POST";
 
       const res = await fetch(url, {
         method,
@@ -484,25 +511,27 @@ export default function TasksPage() {
 
       const data = await res.json();
 
-      // 🔥 IMPORTANT: UI update without page refresh
       if (isEdit) {
-        // Edit: update existing task
-        setTasks((prev) => prev.map((t) => (t._id === saved._id ? data : t)));
-        await fetchTasks();
+        setTasks((prev) =>
+          prev.map((t) => (t._id === saved._id ? data.data : t)),
+        );
+        toast.success("Task updated successfully!");
       } else {
-        // Create: add new task at top
-        setTasks((prev) => [data, ...prev]);
-        await fetchTasks();
+        setTasks((prev) => [data.data, ...prev]);
+        toast.success("Task created successfully!");
       }
 
-      // Modal close already handled in TaskFormModal
+      setModalOpen(false);
+      setEditingTask(null);
     } catch (err) {
       console.error("❌ Save error:", err);
-      alert(err instanceof Error ? err.message : "Failed to save task");
+      toast.error(err instanceof Error ? err.message : "Failed to save task");
     }
   };
 
   const toggleTask = async (id: string) => {
+    setIsToggling(id);
+
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: "PATCH",
@@ -510,17 +539,25 @@ export default function TasksPage() {
         body: JSON.stringify({ action: "toggle-status" }),
       });
 
-      if (!res.ok) throw new Error("Failed to toggle task");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to toggle task");
+      }
 
       const data = await res.json();
-      setTasks((prev) => prev.map((t) => (t._id === id ? data : t)));
+      setTasks((prev) =>
+        prev.map((t) => (t._id === id || t.id === id ? data.data : t)),
+      );
+
+      toast.success("Task status updated!");
     } catch (err) {
       console.error("❌ Toggle error:", err);
-      alert(err instanceof Error ? err.message : "Failed to toggle task");
+      toast.error(err instanceof Error ? err.message : "Failed to toggle task");
+    } finally {
+      setIsToggling(null);
     }
   };
 
-  // Old deleteTask ko replace karein:
   const deleteTask = (id: string) => {
     const task = tasks.find((t) => t._id === id || t.id === id);
     if (task) {
@@ -529,7 +566,6 @@ export default function TasksPage() {
     }
   };
 
-  // New handleDeleteConfirm function add karein:
   const handleDeleteConfirm = async () => {
     if (!taskToDelete) return;
 
@@ -539,40 +575,106 @@ export default function TasksPage() {
       const id = taskToDelete._id || taskToDelete.id;
       const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
 
-      if (!res.ok) throw new Error("Failed to delete task");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete task");
+      }
 
-      // 🔥 UI update without page refresh
       setTasks((prev) => prev.filter((t) => (t._id || t.id) !== id));
       setDeleteModalOpen(false);
       setTaskToDelete(null);
+      toast.success("Task deleted successfully!");
     } catch (err) {
       console.error("❌ Delete error:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete task");
+      toast.error(err instanceof Error ? err.message : "Failed to delete task");
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // ── Derived ──
-  const filtered = tasks.filter((t) => {
-    const q = search.toLowerCase();
-    return (
-      (!q ||
-        t.title.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        t.tags?.some((tag) => tag.toLowerCase().includes(q))) &&
-      (filterStatus === "all" || t.status === filterStatus) &&
-      (filterPriority === "all" || t.priority === filterPriority)
-    );
-  });
+  const duplicateTask = async (task: Task) => {
+    try {
+      const { _id, id, createdAt, updatedAt, ...taskCopy } = task;
 
-  const counts = {
-    all: tasks.length,
-    todo: tasks.filter((t) => t.status === "todo").length,
-    "in-progress": tasks.filter((t) => t.status === "in-progress").length,
-    review: tasks.filter((t) => t.status === "review").length,
-    done: tasks.filter((t) => t.status === "done").length,
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...taskCopy,
+          title: `${task.title} (Copy)`,
+          status: "todo",
+          isArchived: false,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to duplicate task");
+      }
+
+      const data = await res.json();
+      setTasks((prev) => [data.data, ...prev]);
+      toast.success("Task duplicated successfully!");
+    } catch (err) {
+      console.error("❌ Duplicate error:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to duplicate task",
+      );
+    }
   };
+
+  const archiveTask = async (id: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "archive" }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to archive task");
+      }
+
+      const data = await res.json();
+      setTasks((prev) =>
+        prev.map((t) => (t._id === id || t.id === id ? data.data : t)),
+      );
+
+      toast.success("Task archived successfully!");
+    } catch (err) {
+      console.error("❌ Archive error:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to archive task",
+      );
+    }
+  };
+
+  // ── Derived ──
+  const filtered = useMemo(() => {
+    return tasks.filter((t) => {
+      const q = search.toLowerCase();
+      return (
+        (!q ||
+          t.title.toLowerCase().includes(q) ||
+          t.description?.toLowerCase().includes(q) ||
+          t.tags?.some((tag) => tag.toLowerCase().includes(q))) &&
+        (filterStatus === "all" || t.status === filterStatus) &&
+        (filterPriority === "all" || t.priority === filterPriority)
+      );
+    });
+  }, [tasks, search, filterStatus, filterPriority]);
+
+  const counts = useMemo(
+    () => ({
+      all: tasks.length,
+      todo: tasks.filter((t) => t.status === "todo").length,
+      "in-progress": tasks.filter((t) => t.status === "in-progress").length,
+      review: tasks.filter((t) => t.status === "review").length,
+      done: tasks.filter((t) => t.status === "done").length,
+    }),
+    [tasks],
+  );
 
   const hasFilters =
     filterStatus !== "all" || filterPriority !== "all" || search !== "";
@@ -586,8 +688,9 @@ export default function TasksPage() {
   // ── Loading ──
   if (!isLoaded || loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        <p className="text-sm text-muted-foreground">Loading tasks...</p>
       </div>
     );
   }
@@ -598,7 +701,13 @@ export default function TasksPage() {
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <AlertCircle className="w-12 h-12 text-destructive" />
         <p className="text-sm text-muted-foreground">{error}</p>
-        <Button onClick={fetchTasks} variant="outline" size="sm">
+        <Button
+          onClick={fetchTasks}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
           Try Again
         </Button>
       </div>
@@ -680,7 +789,7 @@ export default function TasksPage() {
                   filterStatus === chip.key ? "bg-white/20" : "bg-background",
                 )}
               >
-                {counts[chip.key as keyof typeof counts]}
+                {counts[chip.key as keyof typeof counts] || 0}
               </span>
             </button>
           ))}
@@ -781,14 +890,16 @@ export default function TasksPage() {
                 )}
               </div>
             ) : view === "list" ? (
-              <div className="space-y-2 ">
+              <div className="space-y-2">
                 {filtered.map((task) => (
                   <TaskCard
-                    key={task.id}
+                    key={task._id || task.id}
                     task={task}
                     onToggle={toggleTask}
                     onEdit={openEditTask}
                     onDelete={deleteTask}
+                    onDuplicate={duplicateTask}
+                    onArchive={archiveTask}
                   />
                 ))}
                 <p className="text-[11px] text-muted-foreground text-center pt-2">
@@ -801,6 +912,8 @@ export default function TasksPage() {
                 onToggle={toggleTask}
                 onEdit={openEditTask}
                 onDelete={deleteTask}
+                onDuplicate={duplicateTask}
+                onArchive={archiveTask}
               />
             )}
           </div>
@@ -809,10 +922,14 @@ export default function TasksPage() {
 
       <TaskFormModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingTask(null);
+        }}
         onSave={handleSave}
         task={editingTask}
       />
+
       <DeleteConfirmModal
         open={deleteModalOpen}
         onClose={() => {
@@ -821,6 +938,7 @@ export default function TasksPage() {
         }}
         onConfirm={handleDeleteConfirm}
         title={taskToDelete?.title || "Untitled Task"}
+        type="task"
         isLoading={isDeleting}
       />
     </TooltipProvider>

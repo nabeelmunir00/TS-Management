@@ -1,7 +1,7 @@
 // components/TaskFormModal.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   Edit,
@@ -18,9 +18,9 @@ import {
   Link,
   Paperclip,
   Trash2,
-  GripVertical,
 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -58,8 +57,20 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type TaskStatus = "todo" | "in-progress" | "review" | "done";
 
+export interface SubTask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+export interface Attachment {
+  name: string;
+  url: string;
+  type: string;
+}
+
 export interface Task {
-  _id: string;
+  _id?: string;
   id?: string;
   title: string;
   description?: string;
@@ -77,11 +88,11 @@ export interface Task {
   assignedTo?: string;
   assigneeAvatar?: string;
   tags?: string[];
-  subtasks?: { id: string; title: string; done: boolean }[];
-  attachments?: { name: string; url: string; type: string }[];
+  subtasks?: SubTask[];
+  attachments?: Attachment[];
   aiSuggestions?: string;
   isArchived?: boolean;
-  createdAt: string;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -99,9 +110,9 @@ export interface Project {
 interface TaskFormModalProps {
   open: boolean;
   onClose: () => void;
-  onSave: (task: Task) => void;
+  onSave: (task: Task) => Promise<void>;
   task?: Task | null;
-  onDelete?: (id: string) => void | Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
 }
 
 // ─── Priority Config ──────────────────────────────────────────────────────
@@ -129,28 +140,6 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", color: "bg-emerald-100 text-emerald-600" },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function blankForm(): Omit<Task, "id" | "createdAt" | "updatedAt"> {
-  return {
-    _id: "",
-    title: "",
-    description: "",
-    priority: "medium",
-    status: "todo",
-    dueDate: new Date().toISOString().split("T")[0],
-    estimatedHours: undefined,
-    actualHours: undefined,
-    assignedTo: "",
-    assigneeAvatar: "",
-    tags: [],
-    subtasks: [],
-    attachments: [],
-    aiSuggestions: "",
-    isArchived: false,
-  };
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TaskFormModal({
@@ -160,7 +149,7 @@ export function TaskFormModal({
   task = null,
   onDelete,
 }: TaskFormModalProps) {
-  const isEditMode = Boolean(task);
+  const isEditMode = Boolean(task?._id || task?.id);
 
   // ── Form state ──
   const [form, setForm] = useState<Partial<Task>>({
@@ -200,45 +189,88 @@ export function TaskFormModal({
   /**
    * Fetch projects when modal opens
    */
+  const fetchProjects = useCallback(async () => {
+    debugger;
+    if (!open) return;
+
+    try {
+      setLoadingProjects(true);
+      const res = await fetch("/api/projects?status=active&limit=100");
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to fetch projects");
+      }
+
+      const data = await res.json();
+      setProjects(data.data || []);
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      toast.error("Failed to load projects");
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, [open]);
+
   useEffect(() => {
     if (open) {
       fetchProjects();
     }
-  }, [open]);
+  }, [open, fetchProjects]);
 
   /**
    * Sync form whenever the `task` prop changes OR the modal opens.
    */
   useEffect(() => {
     if (open) {
-      setForm(task ? { ...task } : {});
+      if (task) {
+        // Edit mode - populate form with task data
+        setForm({
+          _id: task._id || task.id,
+          title: task.title || "",
+          description: task.description || "",
+          projectId: task.projectId || task.project?._id || "",
+          priority: task.priority || "medium",
+          status: task.status || "todo",
+          dueDate: task.dueDate || "",
+          estimatedHours: task.estimatedHours,
+          actualHours: task.actualHours,
+          assignedTo: task.assignedTo || "",
+          assigneeAvatar: task.assigneeAvatar || "",
+          tags: task.tags || [],
+          subtasks: task.subtasks || [],
+          attachments: task.attachments || [],
+          aiSuggestions: task.aiSuggestions || "",
+          isArchived: task.isArchived || false,
+        });
+      } else {
+        // Create mode - reset form
+        setForm({
+          title: "",
+          description: "",
+          projectId: "",
+          priority: "medium",
+          status: "todo",
+          dueDate: "",
+          tags: [],
+          subtasks: [],
+          attachments: [],
+        });
+      }
+
+      // Reset UI states
       setTagInput("");
       setAiError(null);
       setShowAIBadge(false);
       setShowAttachmentInput(false);
+      setNewAttachment({ name: "", url: "", type: "" });
     }
   }, [open, task]);
-
-  // ── Fetch Projects ──
-  const fetchProjects = async () => {
-    try {
-      setLoadingProjects(true);
-      const res = await fetch("/api/projects?status=active");
-      if (!res.ok) throw new Error("Failed to fetch projects");
-      const data = await res.json();
-      setProjects(data);
-    } catch (error) {
-      console.error("Error fetching projects:", error);
-    } finally {
-      setLoadingProjects(false);
-    }
-  };
 
   // ── AI Generate Handler ──
   const handleAIGenerate = async () => {
     if (!form.title?.trim()) {
-      setAiError("Please enter a task title first!");
-      setTimeout(() => setAiError(null), 3000);
+      toast.error("Please enter a task title first!");
       return;
     }
 
@@ -275,14 +307,17 @@ export function TaskFormModal({
       }));
 
       setShowAIBadge(true);
+      toast.success("AI suggestions applied!");
+
       setTimeout(() => setShowAIBadge(false), 5000);
     } catch (error) {
       console.error("AI generation failed:", error);
-      setAiError(
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "Failed to generate AI suggestions",
-      );
+          : "Failed to generate AI suggestions";
+      setAiError(errorMessage);
+      toast.error(errorMessage);
       setTimeout(() => setAiError(null), 4000);
     } finally {
       setIsGenerating(false);
@@ -290,7 +325,7 @@ export function TaskFormModal({
   };
 
   // ── Tag helpers ──
-  function handleTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && tagInput.trim()) {
       e.preventDefault();
       const normalized = tagInput.trim().toLowerCase().replace(/\s+/g, "-");
@@ -299,78 +334,98 @@ export function TaskFormModal({
       }
       setTagInput("");
     }
-  }
+  };
 
-  function removeTag(tag: string) {
+  const removeTag = (tag: string) => {
     setForm((f) => ({ ...f, tags: f.tags?.filter((t) => t !== tag) }));
-  }
+  };
 
   // ── Subtask helpers ──
-  function addSubtask() {
+  const addSubtask = () => {
     setForm({
       ...form,
       subtasks: [
         ...(form.subtasks ?? []),
-        { id: Date.now().toString(), title: "", done: false },
+        {
+          id: crypto.randomUUID?.() || Date.now().toString(),
+          title: "",
+          done: false,
+        },
       ],
     });
-  }
+  };
 
-  function updateSubtask(index: number, title: string) {
+  const updateSubtask = (index: number, title: string) => {
     const newSubtasks = [...(form.subtasks ?? [])];
     newSubtasks[index].title = title;
     setForm({ ...form, subtasks: newSubtasks });
-  }
+  };
 
-  function toggleSubtask(index: number) {
+  const toggleSubtask = (index: number) => {
     const newSubtasks = [...(form.subtasks ?? [])];
     newSubtasks[index].done = !newSubtasks[index].done;
     setForm({ ...form, subtasks: newSubtasks });
-  }
+  };
 
-  function removeSubtask(index: number) {
+  const removeSubtask = (index: number) => {
     const newSubtasks = (form.subtasks ?? []).filter((_, i) => i !== index);
     setForm({ ...form, subtasks: newSubtasks });
-  }
+  };
 
   // ── Attachment helpers ──
-  function addAttachment() {
-    if (newAttachment.name.trim() && newAttachment.url.trim()) {
-      setForm({
-        ...form,
-        attachments: [...(form.attachments ?? []), { ...newAttachment }],
-      });
-      setNewAttachment({ name: "", url: "", type: "" });
-      setShowAttachmentInput(false);
+  const addAttachment = () => {
+    if (!newAttachment.name.trim() || !newAttachment.url.trim()) {
+      toast.error("Please enter attachment name and URL");
+      return;
     }
-  }
 
-  function removeAttachment(index: number) {
+    setForm({
+      ...form,
+      attachments: [...(form.attachments ?? []), { ...newAttachment }],
+    });
+    setNewAttachment({ name: "", url: "", type: "" });
+    setShowAttachmentInput(false);
+    toast.success("Attachment added");
+  };
+
+  const removeAttachment = (index: number) => {
     const newAttachments = (form.attachments ?? []).filter(
       (_, i) => i !== index,
     );
     setForm({ ...form, attachments: newAttachments });
-  }
+  };
 
   // ── Save ──
   const handleSave = async () => {
-    if (!form.title?.trim()) return;
+    // Validate
+    if (!form.title?.trim()) {
+      toast.error("Task title is required");
+      return;
+    }
 
     setIsSaving(true);
 
     try {
-      const taskData = {
+      const taskData: Task = {
         ...form,
-        id: task?._id ?? Date.now().toString(),
         title: form.title.trim(),
+        description: form.description?.trim() || "",
         projectId: form.projectId || undefined,
+        status: form.status || "todo",
+        priority: form.priority || "medium",
+        tags: form.tags || [],
+        subtasks: form.subtasks || [],
+        attachments: form.attachments || [],
       };
 
       await onSave(taskData);
-      onClose();
+
+      // Success toast is handled in parent
     } catch (error) {
       console.error("Error saving task:", error);
-      alert("Failed to save task. Please try again.");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save task",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -378,16 +433,20 @@ export function TaskFormModal({
 
   // ── Delete ──
   const handleDelete = async () => {
-    if (!task?._id || !onDelete) return;
+    const taskId = task?._id || task?.id;
+    if (!taskId || !onDelete) return;
 
     setIsSaving(true);
     try {
-      await onDelete(task._id);
+      await onDelete(taskId);
       setShowDeleteModal(false);
+      toast.success("Task deleted successfully!");
       onClose();
     } catch (error) {
       console.error("Error deleting task:", error);
-      alert("Failed to delete task. Please try again.");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete task",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -439,7 +498,7 @@ export function TaskFormModal({
                   onClick={handleAIGenerate}
                   disabled={isGenerating || !form.title?.trim()}
                   className={cn(
-                    "gap-2 h-9 text-xs font-medium transition-all rounded-lg mr-4",
+                    "gap-2 h-9 text-xs font-medium transition-all rounded-lg",
                     isGenerating || !form.title?.trim()
                       ? "opacity-50 cursor-not-allowed"
                       : "border-violet-200 hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30",
@@ -453,6 +512,7 @@ export function TaskFormModal({
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                      AI Suggest
                     </>
                   )}
                 </Button>
@@ -626,7 +686,8 @@ export function TaskFormModal({
                     </SelectContent>
                   </Select>
                   {loadingProjects && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
                       Loading projects...
                     </p>
                   )}
