@@ -446,7 +446,7 @@ export default function ProjectsPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-2 max-w-5xl">
+              <div className="space-y-2 ">
                 {filtered.map((project) => (
                   <ProjectCard
                     key={project._id || project.id}
