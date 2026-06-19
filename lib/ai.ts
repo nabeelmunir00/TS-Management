@@ -42,10 +42,10 @@ export async function generateTaskData(
 
     // Use gemini-pro model (fast & free)
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // or "gemini-pro" for older version
+      model: "gemini-pro", // or "gemini-pro" for older version
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 5000,
       },
     });
 
