@@ -1,15 +1,22 @@
-// app/api/ai/system-design/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { MarkerType } from "reactflow";
 
-// ─── Gemini Client ────────────────────────────────────────────────────────────
+// ─── Gemini Client (Same as lib/ai.ts) ─────────────────────────────────────
 
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set in .env.local");
-  return new GoogleGenerativeAI(apiKey);
+let geminiInstance: GoogleGenerativeAI | null = null;
+
+function getGeminiClient(): GoogleGenerativeAI {
+  if (!geminiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("❌ GEMINI_API_KEY is not set in environment variables");
+      throw new Error(
+        "Gemini API key is missing. Please add GEMINI_API_KEY to your .env.local file.",
+      );
+    }
+    geminiInstance = new GoogleGenerativeAI(apiKey);
+  }
+  return geminiInstance;
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -26,18 +33,21 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = getGeminiClient();
+
+    // 🟢 Updated to Gemini Pro with Native JSON response configuration
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-1.5-pro",
       generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 2000,
+        temperature: 0.2, // Lower temperature makes structural layout data more predictable
+        maxOutputTokens: 4000,
+        responseMimeType: "application/json", // Forces Gemini to output structural JSON directly without markdown backticks
       },
     });
 
     const geminiPrompt = `
 You are a system architecture expert. Generate a clean architecture diagram as JSON for the described system.
 
-IMPORTANT: Return ONLY valid JSON — no markdown, no backticks, no explanation.
+IMPORTANT: Return ONLY valid JSON matching the structure below. Do not wrap it in markdown code block formatting.
 
 JSON structure:
 {
@@ -77,38 +87,40 @@ Layout rules (STRICTLY follow):
 System to design: "${prompt}"
 `.trim();
 
+    console.log("🤖 Sending request to Gemini Pro...");
     const result = await model.generateContent(geminiPrompt);
     const response = await result.response;
-    const text = response.text();
+    const text = response.text().trim();
 
-    // Clean response (strip markdown if Gemini adds it)
-    const cleaned = text
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim();
+    console.log("✅ Received response from Gemini Pro");
 
     let parsed: { nodes: any[]; edges: any[] };
 
     try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      // Try to extract JSON from response
-      const match = cleaned.match(/\{[\s\S]*\}/);
+      // Direct parsing works reliably because responseMimeType forces pure JSON strings
+      parsed = JSON.parse(text);
+    } catch (parseError) {
+      console.warn(
+        "Direct JSON parsing failed, attempting structural fallback extraction...",
+        parseError,
+      );
+      const match = text.match(/\{[\s\S]*\}/);
       if (!match) {
-        console.error("Gemini raw response:", text);
-        throw new Error("AI returned invalid JSON. Please try again.");
+        console.error("Raw unparsable output:", text);
+        throw new Error(
+          "AI returned invalid JSON layout structure. Please try again.",
+        );
       }
       parsed = JSON.parse(match[0]);
     }
 
     if (!parsed.nodes || !Array.isArray(parsed.nodes)) {
-      throw new Error("AI response missing nodes array.");
+      throw new Error("AI response missing structural nodes array.");
     }
 
     // Add edge styling
     const edges = (parsed.edges ?? []).map((e: any) => ({
       ...e,
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf6" },
       style: { stroke: "#8b5cf6", strokeWidth: 2 },
     }));
 
@@ -118,7 +130,7 @@ System to design: "${prompt}"
       edges,
     });
   } catch (err: any) {
-    console.error("[AI System Design]", err);
+    console.error("[AI System Design] Error:", err);
     return NextResponse.json(
       { error: err?.message ?? "Internal server error" },
       { status: 500 },

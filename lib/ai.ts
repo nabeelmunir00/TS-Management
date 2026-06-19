@@ -42,10 +42,10 @@ export async function generateTaskData(
 
     // Use gemini-pro model (fast & free)
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // or "gemini-pro" for older version
+      model: "gemini-pro", // or "gemini-pro" for older version
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 500,
+        maxOutputTokens: 5000,
       },
     });
 
@@ -53,7 +53,7 @@ export async function generateTaskData(
       You are a project management AI assistant. Analyze this task and generate:
 
       1. 3-5 relevant tags (lowercase, hyphen-separated, descriptive)
-      2. Enhanced description (professional, clear, 1-2 sentences)
+      2. Enhanced description (professional, clear, 1-20 sentences)
       3. Priority: "high" if urgent/time-sensitive, "medium" if important but not urgent, "low" if nice-to-have
       4. 2-4 subtasks (clear, actionable steps, each 3-6 words)
 
