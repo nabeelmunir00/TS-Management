@@ -24,7 +24,14 @@ import {
   Clock,
   CheckCircle2,
   Sparkles,
-  FolderOpen,
+  Folder,
+  User,
+  Briefcase,
+  Lightbulb,
+  CalendarDays,
+  GraduationCap,
+  Rocket,
+  Hash,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { format } from "date-fns";
@@ -81,23 +88,13 @@ interface Note {
   title: string;
   content: string;
   category?: string;
-  projectId?: string;
-  projectName?: string;
-  projectColor?: string;
   tags: string[];
   isPinned: boolean;
   isArchived: boolean;
   color?: string;
   reminderDate?: string;
-
   createdAt: string;
   updatedAt?: string;
-}
-
-interface Project {
-  _id: string;
-  name: string;
-  color?: string;
 }
 
 type NoteView = "grid" | "list";
@@ -117,15 +114,26 @@ const NOTE_COLORS = [
 ];
 
 const CATEGORIES = [
-  "Personal",
-  "Work",
-  "Ideas",
-  "Tasks",
-  "Meeting",
-  "Study",
-  "Project",
-  "Other",
+  { id: "personal", label: "Personal", icon: User },
+  { id: "work", label: "Work", icon: Briefcase },
+  { id: "ideas", label: "Ideas", icon: Lightbulb },
+  { id: "tasks", label: "Tasks", icon: CheckCircle2 },
+  { id: "meeting", label: "Meeting", icon: CalendarDays },
+  { id: "study", label: "Study", icon: GraduationCap },
+  { id: "project", label: "Project", icon: Rocket },
+  { id: "other", label: "Other", icon: Hash },
 ];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  personal: "bg-blue-50 text-blue-600 border-blue-200",
+  work: "bg-purple-50 text-purple-600 border-purple-200",
+  ideas: "bg-amber-50 text-amber-600 border-amber-200",
+  tasks: "bg-emerald-50 text-emerald-600 border-emerald-200",
+  meeting: "bg-rose-50 text-rose-600 border-rose-200",
+  study: "bg-indigo-50 text-indigo-600 border-indigo-200",
+  project: "bg-violet-50 text-violet-600 border-violet-200",
+  other: "bg-gray-50 text-gray-600 border-gray-200",
+};
 
 // ─── Note Card ──────────────────────────────────────────────────────────────
 
@@ -154,74 +162,23 @@ function NoteCard({
       .slice(0, 2);
   };
 
-  const getCategoryIcon = (category?: string) => {
-    switch (category) {
-      case "Personal":
-        return <FileText className="w-3 h-3" />;
-      case "Work":
-        return <Briefcase className="w-3 h-3" />;
-      case "Ideas":
-        return <Sparkles className="w-3 h-3" />;
-      case "Tasks":
-        return <CheckCircle2 className="w-3 h-3" />;
-      case "Meeting":
-        return <Users className="w-3 h-3" />;
-      case "Study":
-        return <BookOpen className="w-3 h-3" />;
-      case "Project":
-        return <FolderOpen className="w-3 h-3" />;
-      default:
-        return <StickyNote className="w-3 h-3" />;
-    }
+  const getCategoryIcon = (categoryId?: string) => {
+    if (!categoryId) return <StickyNote className="w-3 h-3" />;
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const Icon = cat?.icon || StickyNote;
+    return <Icon className="w-3 h-3" />;
   };
 
-  const Briefcase = ({ className }: { className?: string }) => (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-      />
-    </svg>
-  );
+  const getCategoryLabel = (categoryId?: string) => {
+    if (!categoryId) return "";
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    return cat?.label || categoryId;
+  };
 
-  const Users = ({ className }: { className?: string }) => (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-      />
-    </svg>
-  );
-
-  const BookOpen = ({ className }: { className?: string }) => (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-      />
-    </svg>
-  );
+  const getCategoryColor = (categoryId?: string) => {
+    if (!categoryId) return CATEGORY_COLORS.other;
+    return CATEGORY_COLORS[categoryId] || CATEGORY_COLORS.other;
+  };
 
   if (view === "list") {
     return (
@@ -252,26 +209,21 @@ function NoteCard({
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-medium truncate">{note.title}</h3>
               {note.isPinned && (
                 <Pin className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
               )}
-              {note.projectName && (
+              {note.category && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] gap-1"
-                  style={
-                    note.projectColor
-                      ? {
-                          borderColor: note.projectColor,
-                          color: note.projectColor,
-                        }
-                      : {}
-                  }
+                  className={cn(
+                    "text-[10px] gap-1",
+                    getCategoryColor(note.category),
+                  )}
                 >
-                  <FolderOpen className="w-3 h-3" />
-                  {note.projectName}
+                  {getCategoryIcon(note.category)}
+                  {getCategoryLabel(note.category)}
                 </Badge>
               )}
             </div>
@@ -401,20 +353,18 @@ function NoteCard({
           </p>
         )}
 
-        {/* Project & Tags */}
+        {/* Category & Tags */}
         <div className="flex flex-wrap items-center gap-1.5 mt-3">
-          {note.projectName && (
+          {note.category && (
             <Badge
               variant="outline"
-              className="text-[10px] gap-1"
-              style={
-                note.projectColor
-                  ? { borderColor: note.projectColor, color: note.projectColor }
-                  : {}
-              }
+              className={cn(
+                "text-[10px] gap-1",
+                getCategoryColor(note.category),
+              )}
             >
-              <FolderOpen className="w-3 h-3" />
-              {note.projectName}
+              {getCategoryIcon(note.category)}
+              {getCategoryLabel(note.category)}
             </Badge>
           )}
           {note.tags?.slice(0, 2).map((tag) => (
@@ -500,20 +450,17 @@ function NoteFormModal({
   onClose,
   onSave,
   note = null,
-  projects = [],
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (note: Note) => void;
   note?: Note | null;
-  projects?: Project[];
 }) {
   const isEdit = !!note;
   const [form, setForm] = useState<Partial<Note>>({
     title: "",
     content: "",
     category: "",
-    projectId: "",
     tags: [],
     color: "#FFFFFF",
     reminderDate: "",
@@ -528,7 +475,7 @@ function NoteFormModal({
         note || {
           title: "",
           content: "",
-          projectId: "",
+          category: "",
           tags: [],
           color: "#FFFFFF",
           reminderDate: "",
@@ -562,7 +509,7 @@ function NoteFormModal({
       id: note?.id || Date.now().toString(),
       title: form.title!,
       content: form.content || "",
-      projectId: form.projectId || "",
+      category: form.category || "",
       tags: form.tags || [],
       color: form.color || "#FFFFFF",
       reminderDate: form.reminderDate,
@@ -643,54 +590,32 @@ function NoteFormModal({
             />
           </div>
 
-          {/* Project + Reminder */}
+          {/* Category + Reminder */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <div className="flex iteam-center gap-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Category</Label>
-                  <Select
-                    value={form.category}
-                    onValueChange={(v) => setForm({ ...form, category: v })}
-                  >
-                    <SelectTrigger className="text-sm h-10">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Label className="text-xs font-medium">Project</Label>
-                  <Select
-                    value={form.projectId || ""}
-                    onValueChange={(v) => setForm({ ...form, projectId: v })}
-                  >
-                    <SelectTrigger className="text-sm h-10">
-                      <SelectValue placeholder="Select project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">No Project</SelectItem>
-                      {projects.map((project) => (
-                        <SelectItem key={project._id} value={project._id}>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="w-2 h-2 rounded-full"
-                              style={{
-                                backgroundColor: project.color || "#6366f1",
-                              }}
-                            />
-                            {project.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              <Label className="text-xs font-medium">Category</Label>
+              <Select
+                value={form.category || ""}
+                onValueChange={(v) => setForm({ ...form, category: v })}
+              >
+                <SelectTrigger className="text-sm h-10">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No Category</SelectItem>
+                  {CATEGORIES.map((cat) => {
+                    const Icon = cat.icon;
+                    return (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        <span className="flex items-center gap-2">
+                          <Icon className="w-4 h-4" />
+                          {cat.label}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">
@@ -722,7 +647,6 @@ function NoteFormModal({
                     }
                     onSelect={(date) => {
                       if (date) {
-                        // Set to midnight to keep date only
                         date.setHours(0, 0, 0, 0);
                         setForm({
                           ...form,
@@ -807,13 +731,11 @@ export default function NotesPage() {
 
   // ── State ──
   const [notes, setNotes] = useState<Note[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<NoteView>("grid");
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
-  const [filterProject, setFilterProject] = useState("all");
   const [filterArchive, setFilterArchive] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -835,7 +757,6 @@ export default function NotesPage() {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
       if (filterCategory !== "all") params.append("category", filterCategory);
-      if (filterProject !== "all") params.append("projectId", filterProject);
       if (filterArchive) params.append("archived", "true");
 
       const res = await fetch(`/api/notes?${params}`);
@@ -848,29 +769,13 @@ export default function NotesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, search, filterCategory, filterProject, filterArchive]);
-
-  // ── Fetch Projects ──
-  const fetchProjects = useCallback(async () => {
-    if (!user?.id) return;
-
-    try {
-      const res = await fetch("/api/projects?status=active");
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch projects:", error);
-    }
-  }, [user?.id]);
+  }, [user?.id, search, filterCategory, filterArchive]);
 
   useEffect(() => {
     if (isLoaded && user?.id) {
       fetchNotes();
-      fetchProjects();
     }
-  }, [isLoaded, user, fetchNotes, fetchProjects]);
+  }, [isLoaded, user, fetchNotes]);
 
   // ── Handlers ──
   const openNewNote = () => {
@@ -997,15 +902,11 @@ export default function NotesPage() {
       n.tags?.some((tag) => tag.toLowerCase().includes(q));
 
     const matchesCategory =
-      filterCategory === "all" ||
-      n.tags?.includes(filterCategory.toLowerCase());
-
-    const matchesProject =
-      filterProject === "all" || n.projectId === filterProject;
+      filterCategory === "all" || n.category === filterCategory;
 
     const matchesArchive = filterArchive ? n.isArchived : !n.isArchived;
 
-    return matchesSearch && matchesCategory && matchesProject && matchesArchive;
+    return matchesSearch && matchesCategory && matchesArchive;
   });
 
   // Sort: Pinned first, then by date
@@ -1022,21 +923,19 @@ export default function NotesPage() {
     active: notes.filter((n) => !n.isArchived).length,
   };
 
-  // Get unique tags for category filter
-  const allTags = Array.from(
-    new Set(notes.flatMap((n) => n.tags || [])),
-  ).filter(Boolean);
+  // Get category counts
+  const categoryCounts = notes.reduce((acc: Record<string, number>, note) => {
+    if (note.category && !note.isArchived) {
+      acc[note.category] = (acc[note.category] || 0) + 1;
+    }
+    return acc;
+  }, {});
 
-  const hasFilters =
-    filterCategory !== "all" ||
-    filterProject !== "all" ||
-    filterArchive ||
-    search !== "";
+  const hasFilters = filterCategory !== "all" || filterArchive || search !== "";
 
   const clearFilters = () => {
     setSearch("");
     setFilterCategory("all");
-    setFilterProject("all");
     setFilterArchive(false);
   };
 
@@ -1118,7 +1017,7 @@ export default function NotesPage() {
           </div>
         </header>
 
-        {/* Category chips (Tags as categories) */}
+        {/* Category chips */}
         <div className="flex items-center gap-1.5 px-6 py-2 border-b overflow-x-auto shrink-0">
           <button
             onClick={() => setFilterCategory("all")}
@@ -1129,6 +1028,7 @@ export default function NotesPage() {
                 : "bg-muted text-muted-foreground hover:bg-muted/70",
             )}
           >
+            <Folder className="w-3 h-3" />
             All
             <span
               className={cn(
@@ -1139,27 +1039,27 @@ export default function NotesPage() {
               {counts.all}
             </span>
           </button>
-          {allTags.slice(0, 10).map((tag) => {
-            const count = notes.filter(
-              (n) => n.tags?.includes(tag) && !n.isArchived,
-            ).length;
+          {CATEGORIES.map((cat) => {
+            const count = categoryCounts[cat.id] || 0;
             if (count === 0) return null;
+            const Icon = cat.icon;
             return (
               <button
-                key={tag}
-                onClick={() => setFilterCategory(tag)}
+                key={cat.id}
+                onClick={() => setFilterCategory(cat.id)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0",
-                  filterCategory === tag
+                  filterCategory === cat.id
                     ? "bg-violet-600 text-white"
                     : "bg-muted text-muted-foreground hover:bg-muted/70",
                 )}
               >
-                #{tag}
+                <Icon className="w-3 h-3" />
+                {cat.label}
                 <span
                   className={cn(
                     "text-[10px] px-1.5 rounded-full",
-                    filterCategory === tag ? "bg-white/20" : "bg-background",
+                    filterCategory === cat.id ? "bg-white/20" : "bg-background",
                   )}
                 >
                   {count}
@@ -1220,26 +1120,27 @@ export default function NotesPage() {
         {/* Expanded filters */}
         {showFilters && (
           <div className="flex items-center gap-3 px-6 py-2 border-b bg-muted/30 shrink-0 flex-wrap">
-            <span className="text-xs text-muted-foreground">Project:</span>
-            <Select value={filterProject} onValueChange={setFilterProject}>
+            <span className="text-xs text-muted-foreground">Category:</span>
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
               <SelectTrigger className="h-7 text-xs w-[150px]">
-                <SelectValue placeholder="All Projects" />
+                <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Projects</SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project._id} value={project._id}>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: project.color || "#6366f1" }}
-                      />
-                      {project.name}
-                    </div>
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All Categories</SelectItem>
+                {CATEGORIES.map((cat) => {
+                  const Icon = cat.icon;
+                  return (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {cat.label}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
+
             {hasFilters && (
               <button
                 onClick={clearFilters}
@@ -1327,7 +1228,6 @@ export default function NotesPage() {
         }}
         onSave={handleSave}
         note={editingNote}
-        projects={projects}
       />
 
       {/* Delete Modal */}
