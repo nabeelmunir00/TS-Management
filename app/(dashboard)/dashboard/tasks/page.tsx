@@ -465,10 +465,11 @@ export default function TasksPage() {
   };
 
   const handleSave = async (saved: Task) => {
+    debugger;
     try {
       const isEdit = !!saved._id;
-      const url = "/api/tasks";
-      const method = "POST";
+      const url = editingTask ? `/api/tasks/${saved._id}` : "/api/tasks";
+      const method = editingTask ? "PUT" : "POST";
 
       const res = await fetch(url, {
         method,
@@ -780,7 +781,7 @@ export default function TasksPage() {
                 )}
               </div>
             ) : view === "list" ? (
-              <div className="space-y-2 max-w-3xl">
+              <div className="space-y-2 ">
                 {filtered.map((task) => (
                   <TaskCard
                     key={task.id}
