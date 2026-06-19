@@ -84,8 +84,8 @@ class NoteService {
     }
 
     // Category filter (tags)
-    if (filters?.category) {
-      query.tags = { $in: [filters.category] };
+    if (filters?.category && filters.category !== "all") {
+      query.category = filters.category;
     }
 
     const limit = filters?.limit || 100;

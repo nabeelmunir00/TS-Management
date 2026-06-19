@@ -335,7 +335,7 @@ function NoteCard({
     >
       {/* Pin badge */}
       {note.isPinned && (
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2 right-6">
           <Pin className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
         </div>
       )}
@@ -397,7 +397,7 @@ function NoteCard({
       </div>
 
       {/* Actions (hover) */}
-      <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -1198,7 +1198,7 @@ export default function NotesPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-2 max-w-5xl">
+              <div className="space-y-2 ">
                 {sorted.map((note) => (
                   <NoteCard
                     key={note._id || note.id}
