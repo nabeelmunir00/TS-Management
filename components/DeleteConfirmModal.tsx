@@ -16,6 +16,7 @@ interface DeleteConfirmModalProps {
   onClose: () => void;
   onConfirm: () => void;
   title: string;
+  type?: string;
   description?: string;
   isLoading?: boolean;
 }
@@ -39,7 +40,7 @@ export function DeleteConfirmModal({
             <DialogTitle className="text-lg">Delete Task</DialogTitle>
           </div>
           <DialogDescription className="mt-3">
-            Are you sure you want to delete <strong>"{title}"</strong>?
+            Are you sure you want to delete <strong>{title}</strong>?
             <br />
             <span className="text-xs text-muted-foreground">{description}</span>
           </DialogDescription>

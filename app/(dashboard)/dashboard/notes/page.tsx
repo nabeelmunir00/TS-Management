@@ -1241,7 +1241,7 @@ export default function NotesPage() {
         title={noteToDelete?.title || "Untitled Note"}
         description="This will permanently delete this note."
         isLoading={isDeleting}
-        type="task"
+        type="note"
       />
     </TooltipProvider>
   );

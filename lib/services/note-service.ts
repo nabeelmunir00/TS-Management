@@ -1,6 +1,7 @@
 // lib/services/note-service.ts
 import connectDB from "@/lib/db";
 import Note from "@/lib/models/Note";
+import Project from "@/lib/models/Project";
 import { Types } from "mongoose";
 
 export interface NoteData {
@@ -9,6 +10,8 @@ export interface NoteData {
   title: string;
   content?: string;
   isPinned?: boolean;
+  category?: string;
+  reminderDate?: string;
   color?: string;
   tags?: string[];
   isArchived?: boolean;
@@ -34,6 +37,8 @@ class NoteService {
       color: data.color || "#ffffff",
       tags: data.tags || [],
       isArchived: data.isArchived || false,
+      category: data.category || "",
+      reminderDate: data.reminderDate || "",
     };
 
     const note = new Note(noteData);
@@ -88,7 +93,6 @@ class NoteService {
     const notes = await Note.find(query)
       .sort({ isPinned: -1, updatedAt: -1 })
       .limit(limit)
-      .populate("projectId", "name color")
       .lean();
 
     return notes.map(this.transformNote);
@@ -147,6 +151,9 @@ class NoteService {
     if (data.isPinned !== undefined) updateData.isPinned = data.isPinned;
     if (data.color !== undefined) updateData.color = data.color;
     if (data.tags !== undefined) updateData.tags = data.tags;
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.reminderDate !== undefined)
+      updateData.reminderDate = data.reminderDate;
     if (data.isArchived !== undefined) updateData.isArchived = data.isArchived;
     if (data.projectId !== undefined) {
       updateData.projectId = data.projectId
@@ -235,6 +242,8 @@ class NoteService {
       projectColor: note.projectId?.color || null,
       isPinned: note.isPinned || false,
       isArchived: note.isArchived || false,
+      category: note.category || "",
+      reminderDate: note.reminderDate || "",
       color: note.color || "#ffffff",
       tags: note.tags || [],
       createdAt: note.createdAt.toISOString().split("T")[0],

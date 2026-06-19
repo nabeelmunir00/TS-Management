@@ -56,12 +56,13 @@ export async function POST(req: NextRequest) {
 
     const note = await noteService.createNote({
       userId,
-      projectId: body.projectId,
       title: body.title.trim(),
       content: body.content || "",
       isPinned: body.isPinned || false,
       color: body.color || "#ffffff",
       tags: body.tags || [],
+      category: body.category || "",
+      reminderDate: body.reminderDate || "",
       isArchived: body.isArchived || false,
     });
 
