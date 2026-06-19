@@ -23,13 +23,8 @@ import {
   PinOff,
   Clock,
   CheckCircle2,
-  Circle,
   Sparkles,
-  File,
-  Image,
-  Link,
-  Code,
-  Quote,
+  FolderOpen,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { format } from "date-fns";
@@ -60,7 +55,6 @@ import {
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -77,6 +71,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -86,15 +81,23 @@ interface Note {
   title: string;
   content: string;
   category?: string;
+  projectId?: string;
+  projectName?: string;
+  projectColor?: string;
   tags: string[];
   isPinned: boolean;
   isArchived: boolean;
   color?: string;
   reminderDate?: string;
-  images?: { url: string; caption?: string }[];
-  links?: { title: string; url: string }[];
+
   createdAt: string;
   updatedAt?: string;
+}
+
+interface Project {
+  _id: string;
+  name: string;
+  color?: string;
 }
 
 type NoteView = "grid" | "list";
@@ -102,15 +105,15 @@ type NoteView = "grid" | "list";
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const NOTE_COLORS = [
-  "#FFFFFF", // White
-  "#FEF3C7", // Amber
-  "#D1FAE5", // Emerald
-  "#DBEAFE", // Blue
-  "#E0E7FF", // Indigo
-  "#FCE7F3", // Pink
-  "#F3E8FF", // Purple
-  "#FECDD3", // Rose
-  "#E5E7EB", // Gray
+  "#FFFFFF",
+  "#FEF3C7",
+  "#D1FAE5",
+  "#DBEAFE",
+  "#E0E7FF",
+  "#FCE7F3",
+  "#F3E8FF",
+  "#FECDD3",
+  "#E5E7EB",
 ];
 
 const CATEGORIES = [
@@ -166,13 +169,12 @@ function NoteCard({
       case "Study":
         return <BookOpen className="w-3 h-3" />;
       case "Project":
-        return <GitBranch className="w-3 h-3" />;
+        return <FolderOpen className="w-3 h-3" />;
       default:
         return <StickyNote className="w-3 h-3" />;
     }
   };
 
-  // Use imported icons at the top or define here
   const Briefcase = ({ className }: { className?: string }) => (
     <svg
       className={className}
@@ -221,22 +223,6 @@ function NoteCard({
     </svg>
   );
 
-  const GitBranch = ({ className }: { className?: string }) => (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
-      />
-    </svg>
-  );
-
   if (view === "list") {
     return (
       <div
@@ -271,10 +257,21 @@ function NoteCard({
               {note.isPinned && (
                 <Pin className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
               )}
-              {note.category && (
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  {getCategoryIcon(note.category)}
-                  {note.category}
+              {note.projectName && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] gap-1"
+                  style={
+                    note.projectColor
+                      ? {
+                          borderColor: note.projectColor,
+                          color: note.projectColor,
+                        }
+                      : {}
+                  }
+                >
+                  <FolderOpen className="w-3 h-3" />
+                  {note.projectName}
                 </Badge>
               )}
             </div>
@@ -404,12 +401,20 @@ function NoteCard({
           </p>
         )}
 
-        {/* Category & Tags */}
+        {/* Project & Tags */}
         <div className="flex flex-wrap items-center gap-1.5 mt-3">
-          {note.category && (
-            <Badge variant="secondary" className="text-[10px] gap-1">
-              {getCategoryIcon(note.category)}
-              {note.category}
+          {note.projectName && (
+            <Badge
+              variant="outline"
+              className="text-[10px] gap-1"
+              style={
+                note.projectColor
+                  ? { borderColor: note.projectColor, color: note.projectColor }
+                  : {}
+              }
+            >
+              <FolderOpen className="w-3 h-3" />
+              {note.projectName}
             </Badge>
           )}
           {note.tags?.slice(0, 2).map((tag) => (
@@ -495,25 +500,27 @@ function NoteFormModal({
   onClose,
   onSave,
   note = null,
+  projects = [],
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (note: Note) => void;
   note?: Note | null;
+  projects?: Project[];
 }) {
   const isEdit = !!note;
   const [form, setForm] = useState<Partial<Note>>({
     title: "",
     content: "",
     category: "",
+    projectId: "",
     tags: [],
     color: "#FFFFFF",
     reminderDate: "",
-    images: [],
-    links: [],
   });
   const [tagInput, setTagInput] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -521,12 +528,10 @@ function NoteFormModal({
         note || {
           title: "",
           content: "",
-          category: "",
+          projectId: "",
           tags: [],
           color: "#FFFFFF",
           reminderDate: "",
-          images: [],
-          links: [],
         },
       );
       setTagInput("");
@@ -557,14 +562,12 @@ function NoteFormModal({
       id: note?.id || Date.now().toString(),
       title: form.title!,
       content: form.content || "",
-      category: form.category || "",
+      projectId: form.projectId || "",
       tags: form.tags || [],
       color: form.color || "#FFFFFF",
       reminderDate: form.reminderDate,
       isPinned: note?.isPinned || false,
       isArchived: note?.isArchived || false,
-      images: form.images || [],
-      links: form.links || [],
       createdAt: note?.createdAt || new Date().toISOString().split("T")[0],
     };
 
@@ -640,37 +643,100 @@ function NoteFormModal({
             />
           </div>
 
-          {/* Category + Reminder */}
+          {/* Project + Reminder */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Category</Label>
-              <Select
-                value={form.category}
-                onValueChange={(v) => setForm({ ...form, category: v })}
-              >
-                <SelectTrigger className="text-sm h-10">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex iteam-center gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Category</Label>
+                  <Select
+                    value={form.category}
+                    onValueChange={(v) => setForm({ ...form, category: v })}
+                  >
+                    <SelectTrigger className="text-sm h-10">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Label className="text-xs font-medium">Project</Label>
+                  <Select
+                    value={form.projectId || ""}
+                    onValueChange={(v) => setForm({ ...form, projectId: v })}
+                  >
+                    <SelectTrigger className="text-sm h-10">
+                      <SelectValue placeholder="Select project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">No Project</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project._id} value={project._id}>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{
+                                backgroundColor: project.color || "#6366f1",
+                              }}
+                            />
+                            {project.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Reminder</Label>
-              <Input
-                type="datetime-local"
-                value={form.reminderDate || ""}
-                onChange={(e) =>
-                  setForm({ ...form, reminderDate: e.target.value })
-                }
-                className="text-sm h-10"
-              />
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal h-10",
+                      !form.reminderDate && "text-muted-foreground",
+                    )}
+                  >
+                    <Calendar className="mr-2 h-3.5 w-3.5" />
+                    {form.reminderDate ? (
+                      format(new Date(form.reminderDate), "PPP")
+                    ) : (
+                      <span>Set reminder</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={
+                      form.reminderDate
+                        ? new Date(form.reminderDate)
+                        : undefined
+                    }
+                    onSelect={(date) => {
+                      if (date) {
+                        // Set to midnight to keep date only
+                        date.setHours(0, 0, 0, 0);
+                        setForm({
+                          ...form,
+                          reminderDate: date.toISOString().split("T")[0],
+                        });
+                      } else {
+                        setForm({ ...form, reminderDate: "" });
+                      }
+                      setDatePickerOpen(false);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -741,15 +807,22 @@ export default function NotesPage() {
 
   // ── State ──
   const [notes, setNotes] = useState<Note[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<NoteView>("grid");
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [filterProject, setFilterProject] = useState("all");
   const [filterArchive, setFilterArchive] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+
+  // Delete Modal States
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [noteToDelete, setNoteToDelete] = useState<Note | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ── Fetch Notes ──
   const fetchNotes = useCallback(async () => {
@@ -762,6 +835,7 @@ export default function NotesPage() {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
       if (filterCategory !== "all") params.append("category", filterCategory);
+      if (filterProject !== "all") params.append("projectId", filterProject);
       if (filterArchive) params.append("archived", "true");
 
       const res = await fetch(`/api/notes?${params}`);
@@ -774,11 +848,29 @@ export default function NotesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, search, filterCategory, filterArchive]);
+  }, [user?.id, search, filterCategory, filterProject, filterArchive]);
+
+  // ── Fetch Projects ──
+  const fetchProjects = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const res = await fetch("/api/projects?status=active");
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch projects:", error);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    // if (user?.id) fetchNotes();
-  }, [isLoaded, user, fetchNotes]);
+    if (isLoaded && user?.id) {
+      fetchNotes();
+      fetchProjects();
+    }
+  }, [isLoaded, user, fetchNotes, fetchProjects]);
 
   // ── Handlers ──
   const openNewNote = () => {
@@ -789,6 +881,38 @@ export default function NotesPage() {
   const openEditNote = (note: Note) => {
     setEditingNote(note);
     setModalOpen(true);
+  };
+
+  const deleteNote = (id: string) => {
+    const note = notes.find((n) => (n._id || n.id) === id);
+    if (note) {
+      setNoteToDelete(note);
+      setDeleteModalOpen(true);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!noteToDelete) return;
+
+    setIsDeleting(true);
+
+    try {
+      const id = noteToDelete._id || noteToDelete.id!;
+      const res = await fetch(`/api/notes/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Failed to delete note");
+
+      setNotes((prev) => prev.filter((n) => (n._id || n.id) !== id));
+      setDeleteModalOpen(false);
+      setNoteToDelete(null);
+    } catch (err) {
+      console.error("❌ Delete error:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete note");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSave = async (saved: Note) => {
@@ -829,48 +953,38 @@ export default function NotesPage() {
     }
   };
 
-  const deleteNote = (id: string) => {
-    if (!confirm("Delete this note?")) return;
-
-    fetch(`/api/notes/${id}`, { method: "DELETE" })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to delete note");
-        setNotes((prev) => prev.filter((n) => (n._id || n.id) !== id));
-      })
-      .catch((err) => {
-        console.error("❌ Delete error:", err);
-        alert(err.message);
+  const togglePin = async (id: string) => {
+    try {
+      const res = await fetch(`/api/notes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle-pin" }),
       });
+
+      if (!res.ok) throw new Error("Failed to toggle pin");
+
+      const data = await res.json();
+      setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
+    } catch (err) {
+      console.error("❌ Toggle pin error:", err);
+    }
   };
 
-  const togglePin = (id: string) => {
-    fetch(`/api/notes/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle-pin" }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
-      })
-      .catch((err) => {
-        console.error("❌ Toggle pin error:", err);
+  const toggleArchive = async (id: string) => {
+    try {
+      const res = await fetch(`/api/notes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle-archive" }),
       });
-  };
 
-  const toggleArchive = (id: string) => {
-    fetch(`/api/notes/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle-archive" }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
-      })
-      .catch((err) => {
-        console.error("❌ Toggle archive error:", err);
-      });
+      if (!res.ok) throw new Error("Failed to toggle archive");
+
+      const data = await res.json();
+      setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
+    } catch (err) {
+      console.error("❌ Toggle archive error:", err);
+    }
   };
 
   // ── Derived ──
@@ -883,11 +997,15 @@ export default function NotesPage() {
       n.tags?.some((tag) => tag.toLowerCase().includes(q));
 
     const matchesCategory =
-      filterCategory === "all" || n.category === filterCategory;
+      filterCategory === "all" ||
+      n.tags?.includes(filterCategory.toLowerCase());
+
+    const matchesProject =
+      filterProject === "all" || n.projectId === filterProject;
 
     const matchesArchive = filterArchive ? n.isArchived : !n.isArchived;
 
-    return matchesSearch && matchesCategory && matchesArchive;
+    return matchesSearch && matchesCategory && matchesProject && matchesArchive;
   });
 
   // Sort: Pinned first, then by date
@@ -901,24 +1019,35 @@ export default function NotesPage() {
     all: notes.length,
     pinned: notes.filter((n) => n.isPinned).length,
     archived: notes.filter((n) => n.isArchived).length,
+    active: notes.filter((n) => !n.isArchived).length,
   };
 
-  const hasFilters = filterCategory !== "all" || filterArchive || search !== "";
+  // Get unique tags for category filter
+  const allTags = Array.from(
+    new Set(notes.flatMap((n) => n.tags || [])),
+  ).filter(Boolean);
+
+  const hasFilters =
+    filterCategory !== "all" ||
+    filterProject !== "all" ||
+    filterArchive ||
+    search !== "";
 
   const clearFilters = () => {
     setSearch("");
     setFilterCategory("all");
+    setFilterProject("all");
     setFilterArchive(false);
   };
 
   // ── Loading ──
-  //   if (!isLoaded || loading) {
-  //     return (
-  //       <div className="flex items-center justify-center h-screen">
-  //         <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-  //       </div>
-  //     );
-  //   }
+  if (!isLoaded || loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+      </div>
+    );
+  }
 
   // ── Error ──
   if (error) {
@@ -944,7 +1073,7 @@ export default function NotesPage() {
               Notes
             </h1>
             <p className="text-xs text-muted-foreground">
-              {counts.pinned} pinned · {notes.length - counts.archived} active ·{" "}
+              {counts.pinned} pinned · {counts.active} active ·{" "}
               {counts.archived} archived
             </p>
           </div>
@@ -989,7 +1118,7 @@ export default function NotesPage() {
           </div>
         </header>
 
-        {/* Category chips */}
+        {/* Category chips (Tags as categories) */}
         <div className="flex items-center gap-1.5 px-6 py-2 border-b overflow-x-auto shrink-0">
           <button
             onClick={() => setFilterCategory("all")}
@@ -1010,27 +1139,27 @@ export default function NotesPage() {
               {counts.all}
             </span>
           </button>
-          {CATEGORIES.map((cat) => {
+          {allTags.slice(0, 10).map((tag) => {
             const count = notes.filter(
-              (n) => n.category === cat && !n.isArchived,
+              (n) => n.tags?.includes(tag) && !n.isArchived,
             ).length;
             if (count === 0) return null;
             return (
               <button
-                key={cat}
-                onClick={() => setFilterCategory(cat)}
+                key={tag}
+                onClick={() => setFilterCategory(tag)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0",
-                  filterCategory === cat
+                  filterCategory === tag
                     ? "bg-violet-600 text-white"
                     : "bg-muted text-muted-foreground hover:bg-muted/70",
                 )}
               >
-                {cat}
+                #{tag}
                 <span
                   className={cn(
                     "text-[10px] px-1.5 rounded-full",
-                    filterCategory === cat ? "bg-white/20" : "bg-background",
+                    filterCategory === tag ? "bg-white/20" : "bg-background",
                   )}
                 >
                   {count}
@@ -1091,16 +1220,22 @@ export default function NotesPage() {
         {/* Expanded filters */}
         {showFilters && (
           <div className="flex items-center gap-3 px-6 py-2 border-b bg-muted/30 shrink-0 flex-wrap">
-            <span className="text-xs text-muted-foreground">Category:</span>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <span className="text-xs text-muted-foreground">Project:</span>
+            <Select value={filterProject} onValueChange={setFilterProject}>
               <SelectTrigger className="h-7 text-xs w-[150px]">
-                <SelectValue placeholder="All Categories" />
+                <SelectValue placeholder="All Projects" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
+                <SelectItem value="all">All Projects</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project._id} value={project._id}>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: project.color || "#6366f1" }}
+                      />
+                      {project.name}
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1192,6 +1327,21 @@ export default function NotesPage() {
         }}
         onSave={handleSave}
         note={editingNote}
+        projects={projects}
+      />
+
+      {/* Delete Modal */}
+      <DeleteConfirmModal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setNoteToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title={noteToDelete?.title || "Untitled Note"}
+        description="This will permanently delete this note."
+        isLoading={isDeleting}
+        type="task"
       />
     </TooltipProvider>
   );
