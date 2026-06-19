@@ -4,11 +4,13 @@ import ProjectModel from "../models/Project";
 import connectDB from "../db";
 import { Types } from "mongoose";
 import { cache } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface CreateTaskInput {
   userId: string;
+  taskId: string;
   projectId?: string;
   title: string;
   description?: string;
@@ -90,6 +92,7 @@ export async function createTask(data: CreateTaskInput) {
 
     // ✅ Prepare task data
     const taskData = {
+      taskId: `TASK-${uuidv4().slice(0, 8).toUpperCase()}`,
       userId: data.userId,
       projectId: data.projectId
         ? new Types.ObjectId(data.projectId)
