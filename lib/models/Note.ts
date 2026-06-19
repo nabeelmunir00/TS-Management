@@ -5,6 +5,28 @@ const NoteSchema = new mongoose.Schema({
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project" },
   title: { type: String, required: true },
   content: { type: String, default: "" },
+  category: {
+    type: String,
+    enum: {
+      values: [
+        "personal",
+        "work",
+        "ideas",
+        "tasks",
+        "meeting",
+        "study",
+        "project",
+        "other",
+      ],
+      message: "Invalid category",
+    },
+    default: "",
+    trim: true,
+  },
+  reminderDate: {
+    type: Date,
+    required: false,
+  },
   isPinned: { type: Boolean, default: false },
   color: { type: String, default: "#ffffff" },
   tags: [String],
