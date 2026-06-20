@@ -381,6 +381,41 @@ TaskSchema.statics.getDashboardStats = async function (
   );
 };
 
+TaskSchema.statics.getDashboardStats = async function (userId: string) {
+  return this.aggregate([
+    { $match: { userId, isArchived: false } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        completed: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
+        inProgress: {
+          $sum: { $cond: [{ $eq: ["$status", "in-progress"] }, 1, 0] },
+        },
+        todo: { $sum: { $cond: [{ $eq: ["$status", "todo"] }, 1, 0] } },
+        review: { $sum: { $cond: [{ $eq: ["$status", "review"] }, 1, 0] } },
+        highPriority: {
+          $sum: { $cond: [{ $in: ["$priority", ["high", "urgent"]] }, 1, 0] },
+        },
+        overdue: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $lt: ["$dueDate", new Date()] },
+                  { $ne: ["$status", "done"] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+};
+
 // ─── Model ──────────────────────────────────────────────────────────────────
 
 const TaskModel: ITaskModel =
