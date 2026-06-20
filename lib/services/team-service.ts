@@ -337,7 +337,7 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
     const invitation = await Invitation.findOne({
       token: data.token,
       status: "pending",
-    });
+    }).populate("organizationId");
 
     if (!invitation) {
       return {
