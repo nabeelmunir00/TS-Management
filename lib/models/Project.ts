@@ -1,11 +1,13 @@
 // models/Project.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 import TaskModel from "./Task";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type ProjectStatus = "active" | "on-hold" | "completed" | "archived";
 export type ProjectPriority = "low" | "medium" | "high" | "critical";
+export type TaskStatus = "todo" | "in-progress" | "review" | "done";
 
 export interface ITeamMember {
   userId: string;
@@ -19,7 +21,7 @@ export interface ITeamMember {
 
 export interface IProject extends Document {
   userId: string;
-  projectId: string; // Human-readable ID: PROJ-001
+  projectId: string;
   name: string;
   description: string;
   color: string;
@@ -34,11 +36,11 @@ export interface IProject extends Document {
   teamMembers: ITeamMember[];
   tasksCount: number;
   completedTasks: number;
-  progress: number; // Virtual
   createdAt: Date;
   updatedAt: Date;
 
   // Virtuals
+  progress: number;
   isOverdue: boolean;
   isActive: boolean;
 }
@@ -58,6 +60,7 @@ const ProjectSchema = new Schema<IProject>(
       unique: true,
       index: true,
       trim: true,
+      default: () => `PROJ-${uuidv4().slice(0, 8).toUpperCase()}`,
     },
     name: {
       type: String,
@@ -135,9 +138,9 @@ const ProjectSchema = new Schema<IProject>(
       type: Date,
       required: false,
       validate: {
-        validator: function (this: any, value: Date) {
+        validator: function (value: Date) {
           if (!this.startDate || !value) return true;
-          return value >= this.startDate || false;
+          return value >= this.startDate;
         },
         message: "End date cannot be before start date",
       },
@@ -201,7 +204,6 @@ const ProjectSchema = new Schema<IProject>(
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
-// Compound indexes for common queries
 ProjectSchema.index({ userId: 1, status: 1, isArchived: 1 });
 ProjectSchema.index({ userId: 1, isFavorite: 1, isArchived: 1 });
 ProjectSchema.index({ userId: 1, priority: 1, isArchived: 1 });
@@ -228,42 +230,97 @@ ProjectSchema.virtual("isActive").get(function (this: IProject) {
   return this.status === "active" && !this.isArchived;
 });
 
-ProjectSchema.virtual("totalTasks").get(function (this: IProject) {
-  return this.tasksCount;
-});
+// ─── Statics Interface ──────────────────────────────────────────────────────
 
-// ─── Middleware ──────────────────────────────────────────────────────────────
+interface IProjectModel extends Model<IProject> {
+  // ✅ Simple flag-based update
+  updateTaskCounts(
+    projectId: mongoose.Types.ObjectId,
+    action: "taskCreated" | "taskDeleted" | "taskCompleted" | "taskUncompleted",
+  ): Promise<void>;
 
-// Pre-save: Generate projectId
-ProjectSchema.pre("save", async function (this: IProject, next) {
-  if (this.isNew && !this.projectId) {
-    const ProjectModel = mongoose.model<IProject>("Project");
-    const count = await ProjectModel.countDocuments({ userId: this.userId });
-    this.projectId = `PROJ-${String(count + 1).padStart(3, "0")}`;
+  // ✅ Recalculate (safety net)
+  recalculateTaskCounts(projectId: mongoose.Types.ObjectId): Promise<void>;
+
+  // ✅ Other static methods
+  findByProjectId(userId: string, projectId: string): Promise<IProject | null>;
+  findActive(userId: string): Promise<IProject[]>;
+  findFavorite(userId: string): Promise<IProject[]>;
+  getDashboardStats(userId: string): Promise<any>;
+  getProjectsWithTaskStats(userId: string): Promise<any[]>;
+}
+
+// ─── ⭐ MAIN: updateTaskCounts with Simple Flags ───────────────────────────
+
+/**
+ * ✅ SIMPLE & PRODUCTION-READY
+ * Each action has a specific purpose
+ *
+ * @param projectId - Project ID to update
+ * @param action - 'taskCreated' | 'taskDeleted' | 'taskCompleted' | 'taskUncompleted'
+ *
+ * Usage:
+ * - taskCreated: New task added → tasksCount +1
+ * - taskDeleted: Task removed → tasksCount -1
+ * - taskCompleted: Task marked as done → completedTasks +1
+ * - taskUncompleted: Task unmarked from done → completedTasks -1
+ */
+ProjectSchema.statics.updateTaskCounts = async function (
+  projectId: mongoose.Types.ObjectId,
+  action: "taskCreated" | "taskDeleted" | "taskCompleted" | "taskUncompleted",
+): Promise<void> {
+  try {
+    switch (action) {
+      case "taskCreated":
+        await this.updateOne({ _id: projectId }, { $inc: { tasksCount: 1 } });
+        console.log(`✅ Project ${projectId}: +1 task (created)`);
+        break;
+
+      case "taskDeleted":
+        await this.updateOne({ _id: projectId }, { $inc: { tasksCount: -1 } });
+        console.log(`✅ Project ${projectId}: -1 task (deleted)`);
+        break;
+
+      case "taskCompleted":
+        await this.updateOne(
+          { _id: projectId },
+          { $inc: { completedTasks: 1 } },
+        );
+        console.log(`✅ Project ${projectId}: +1 completed (task done)`);
+        break;
+
+      case "taskUncompleted":
+        await this.updateOne(
+          { _id: projectId },
+          { $inc: { completedTasks: -1 } },
+        );
+        console.log(`✅ Project ${projectId}: -1 completed (task undone)`);
+        break;
+
+      default:
+        console.warn(`⚠️ Unknown action: ${action}`);
+    }
+  } catch (error) {
+    console.error(`❌ Failed to update project ${projectId} counts:`, error);
+    throw error;
   }
+};
 
-  // Auto-set endDate when status changes to completed
-  if (this.isModified("status") && this.status === "completed") {
-    this.endDate = new Date();
-  }
+// ─── RECALCULATE: Safety Net ──────────────────────────────────────────────
 
-  // Auto-set startDate when status changes to active
-  if (
-    this.isModified("status") &&
-    this.status === "active" &&
-    !this.startDate
-  ) {
-    this.startDate = new Date();
-  }
-
-  // Update tasksCount and completedTasks when status changes
-  if (this.isModified("status") || this.isModified("isArchived")) {
-    const TaskModel = mongoose.model("Task");
+/**
+ * ✅ RECALCULATE COUNTS FROM SCRATCH
+ * Use this as a safety net if counts get out of sync
+ */
+ProjectSchema.statics.recalculateTaskCounts = async function (
+  projectId: mongoose.Types.ObjectId,
+): Promise<void> {
+  try {
     const taskStats = await TaskModel.aggregate([
       {
         $match: {
-          projectId: this._id,
-          userId: this.userId,
+          projectId: projectId,
+          isArchived: false,
         },
       },
       {
@@ -271,49 +328,38 @@ ProjectSchema.pre("save", async function (this: IProject, next) {
           _id: null,
           total: { $sum: 1 },
           completed: {
-            $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] },
+            $sum: {
+              $cond: [{ $eq: ["$status", "done"] }, 1, 0],
+            },
           },
         },
       },
     ]);
 
-    if (taskStats.length > 0) {
-      this.tasksCount = taskStats[0].total;
-      this.completedTasks = taskStats[0].completed;
-    }
+    const updateData =
+      taskStats.length > 0
+        ? {
+            tasksCount: taskStats[0].total,
+            completedTasks: taskStats[0].completed,
+          }
+        : {
+            tasksCount: 0,
+            completedTasks: 0,
+          };
+
+    await this.updateOne({ _id: projectId }, { $set: updateData });
+
+    console.log(`✅ Project ${projectId} recalculated:`, updateData);
+  } catch (error) {
+    console.error(
+      `❌ Failed to recalculate project ${projectId} counts:`,
+      error,
+    );
+    throw error;
   }
-});
+};
 
-// Pre-remove: Cascade delete tasks
-ProjectSchema.pre("deleteOne", async function (this: IProject) {
-  const projectId = this._id;
-  await TaskModel.deleteMany({ projectId });
-});
-
-// Post-save: Log
-ProjectSchema.post("save", function (doc: IProject) {
-  console.log(`✅ Project ${doc.projectId} (${doc.name}) saved successfully`);
-});
-
-// ─── Statics ──────────────────────────────────────────────────────────────────
-
-interface IProjectModel extends Model<IProject> {
-  findByProjectId(userId: string, projectId: string): Promise<IProject | null>;
-  findActive(userId: string): Promise<IProject[]>;
-  findFavorite(userId: string): Promise<IProject[]>;
-  getDashboardStats(userId: string): Promise<{
-    total: number;
-    active: number;
-    onHold: number;
-    completed: number;
-    archived: number;
-    favorite: number;
-  }>;
-  getProjectsWithTaskStats(userId: string): Promise<any[]>;
-  updateTaskCounts(projectId: mongoose.Types.ObjectId): Promise<void>;
-}
-
-// ─── Static Methods ──────────────────────────────────────────────────────────
+// ─── Other Static Methods ──────────────────────────────────────────────────
 
 ProjectSchema.statics.findByProjectId = async function (
   userId: string,
@@ -344,37 +390,20 @@ ProjectSchema.statics.findFavorite = async function (
 
 ProjectSchema.statics.getDashboardStats = async function (
   userId: string,
-): Promise<{
-  total: number;
-  active: number;
-  onHold: number;
-  completed: number;
-  archived: number;
-  favorite: number;
-}> {
+): Promise<any> {
   const [stats] = await this.aggregate([
-    {
-      $match: { userId },
-    },
+    { $match: { userId } },
     {
       $group: {
         _id: null,
         total: { $sum: 1 },
-        active: {
-          $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
-        },
-        onHold: {
-          $sum: { $cond: [{ $eq: ["$status", "on-hold"] }, 1, 0] },
-        },
+        active: { $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } },
+        onHold: { $sum: { $cond: [{ $eq: ["$status", "on-hold"] }, 1, 0] } },
         completed: {
           $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
         },
-        archived: {
-          $sum: { $cond: [{ $eq: ["$status", "archived"] }, 1, 0] },
-        },
-        favorite: {
-          $sum: { $cond: [{ $eq: ["$isFavorite", true] }, 1, 0] },
-        },
+        archived: { $sum: { $cond: [{ $eq: ["$status", "archived"] }, 1, 0] } },
+        favorite: { $sum: { $cond: [{ $eq: ["$isFavorite", true] }, 1, 0] } },
       },
     },
   ]);
@@ -456,15 +485,16 @@ ProjectSchema.statics.getProjectsWithTaskStats = async function (
         priority: 1,
         status: 1,
         isFavorite: 1,
+        isArchived: 1,
         tags: 1,
         startDate: 1,
         endDate: 1,
         tasksCount: 1,
         completedTasks: 1,
         progress: 1,
+        teamMembers: 1,
         createdAt: 1,
         updatedAt: 1,
-        teamMembers: 1,
       },
     },
     {
@@ -473,42 +503,24 @@ ProjectSchema.statics.getProjectsWithTaskStats = async function (
   ]);
 };
 
-ProjectSchema.statics.updateTaskCounts = async function (
-  projectId: mongoose.Types.ObjectId,
-): Promise<void> {
-  const taskStats = await TaskModel.aggregate([
-    {
-      $match: { projectId },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: 1 },
-        completed: {
-          $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] },
-        },
-      },
-    },
-  ]);
+// ─── Middleware ──────────────────────────────────────────────────────────────
 
-  if (taskStats.length > 0) {
-    await this.updateOne(
-      { _id: projectId },
-      {
-        tasksCount: taskStats[0].total,
-        completedTasks: taskStats[0].completed,
-      },
-    );
-  } else {
-    await this.updateOne(
-      { _id: projectId },
-      {
-        tasksCount: 0,
-        completedTasks: 0,
-      },
-    );
+// Pre-save: Auto-set dates
+ProjectSchema.pre("save", async function (this: IProject) {
+  // Auto-set endDate when status changes to completed
+  if (this.isModified("status") && this.status === "completed") {
+    this.endDate = new Date();
   }
-};
+
+  // Auto-set startDate when status changes to active
+  if (
+    this.isModified("status") &&
+    this.status === "active" &&
+    !this.startDate
+  ) {
+    this.startDate = new Date();
+  }
+});
 
 // ─── Model ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-// lib/task-service.ts
-import TaskModel, { TaskStatus, Priority, ITask } from "../models/Task";
+// lib/services/task-service.ts
+import TaskModel, { TaskStatus, Priority } from "../models/Task";
 import ProjectModel from "../models/Project";
 import connectDB from "../db";
 import { Types } from "mongoose";
@@ -10,7 +10,6 @@ import { v4 as uuidv4 } from "uuid";
 
 export interface CreateTaskInput {
   userId: string;
-  taskId: string;
   projectId?: string;
   title: string;
   description?: string;
@@ -45,16 +44,6 @@ export interface TaskFilters {
   limit?: number;
   sortBy?: "createdAt" | "dueDate" | "priority" | "status" | "title";
   sortOrder?: "asc" | "desc";
-}
-
-export interface PaginatedResponse {
-  tasks: ITask[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
@@ -120,13 +109,17 @@ export async function createTask(data: CreateTaskInput) {
     const task = await TaskModel.create(taskData);
     const taskObject = task.toObject();
 
-    // ✅ Update project tasks count (async - don't await to avoid blocking)
+    // ✅ Update project counts
     if (data.projectId) {
-      ProjectModel.updateTaskCounts(new Types.ObjectId(data.projectId))
-        .then(() =>
-          console.log(`✅ Updated project ${data.projectId} task counts`),
-        )
-        .catch((err) => console.error("Error updating project counts:", err));
+      const projectId = new Types.ObjectId(data.projectId);
+
+      // Increment total tasks
+      await ProjectModel.updateTaskCounts(projectId, "taskCreated");
+
+      // If task is created as "done", increment completed tasks
+      if (taskData.status === "done") {
+        await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
+      }
     }
 
     return {
@@ -280,6 +273,11 @@ export async function updateTask(data: UpdateTaskInput) {
       return { success: false, error: "Task not found" };
     }
 
+    // ✅ Check if status is changing
+    const statusChanged = data.status && data.status !== existingTask.status;
+    const wasCompleted = existingTask.status === "done";
+    const willBeCompleted = data.status === "done";
+
     // ✅ Build update object
     const updateData: any = {};
     const allowedFields = [
@@ -344,20 +342,45 @@ export async function updateTask(data: UpdateTaskInput) {
       return { success: false, error: "Task not found" };
     }
 
-    // ✅ Update project task counts if project changed
+    // ✅ Update project counts if status changed
+    if (statusChanged && task.projectId) {
+      const projectId = task.projectId;
+
+      // If task became completed
+      if (!wasCompleted && willBeCompleted) {
+        await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
+      }
+      // If task became uncompleted
+      else if (wasCompleted && !willBeCompleted) {
+        await ProjectModel.updateTaskCounts(projectId, "taskUncompleted");
+      }
+    }
+
+    // ✅ If project changed, update both projects
     if (
       data.projectId &&
       data.projectId !== existingTask.projectId?.toString()
     ) {
+      const newProjectId = new Types.ObjectId(data.projectId);
+
+      // Update old project (decrement)
       if (existingTask.projectId) {
-        ProjectModel.updateTaskCounts(existingTask.projectId).catch(
-          console.error,
+        await ProjectModel.updateTaskCounts(
+          existingTask.projectId,
+          "taskDeleted",
         );
+        if (wasCompleted) {
+          await ProjectModel.updateTaskCounts(
+            existingTask.projectId,
+            "taskUncompleted",
+          );
+        }
       }
-      if (data.projectId) {
-        ProjectModel.updateTaskCounts(new Types.ObjectId(data.projectId)).catch(
-          console.error,
-        );
+
+      // Update new project (increment)
+      await ProjectModel.updateTaskCounts(newProjectId, "taskCreated");
+      if (willBeCompleted) {
+        await ProjectModel.updateTaskCounts(newProjectId, "taskCompleted");
       }
     }
 
@@ -381,23 +404,41 @@ export async function deleteTask(id: string, userId: string) {
       return { success: false, error: "Invalid task ID" };
     }
 
-    // ✅ Get task before deletion to update project counts
+    // ✅ Get task before deletion
     const task = await TaskModel.findOne({ _id: id, userId });
+
     if (!task) {
       return { success: false, error: "Task not found" };
     }
 
     const projectId = task.projectId;
+    const wasCompleted = task.status === "done";
+    const taskId = task.taskId || task._id;
 
     // ✅ Delete task
     await TaskModel.findOneAndDelete({ _id: id, userId });
 
-    // ✅ Update project task counts
+    // ✅ Update project counts
     if (projectId) {
-      ProjectModel.updateTaskCounts(projectId).catch(console.error);
+      // Decrease total tasks
+      await ProjectModel.updateTaskCounts(projectId, "taskDeleted");
+
+      // If task was completed, decrease completed count
+      if (wasCompleted) {
+        await ProjectModel.updateTaskCounts(projectId, "taskUncompleted");
+      }
     }
 
-    return { success: true };
+    console.log(`✅ Task ${taskId} deleted successfully`);
+
+    return {
+      success: true,
+      data: {
+        taskId: taskId,
+        projectId: projectId,
+        wasCompleted,
+      },
+    };
   } catch (error) {
     console.error("❌ Delete task error:", error);
     return {
@@ -417,11 +458,15 @@ export async function toggleTaskStatus(id: string, userId: string) {
       return { success: false, error: "Invalid task ID" };
     }
 
+    // ✅ Get task before toggle
     const task = await TaskModel.findOne({ _id: id, userId });
 
     if (!task) {
       return { success: false, error: "Task not found" };
     }
+
+    const previousStatus = task.status;
+    const projectId = task.projectId;
 
     // ✅ Cycle through statuses
     const statusCycle: Record<TaskStatus, TaskStatus> = {
@@ -434,12 +479,24 @@ export async function toggleTaskStatus(id: string, userId: string) {
     task.status = statusCycle[task.status] || "todo";
     await task.save();
 
-    // ✅ Update project counts if task completed
-    if (task.status === "done" && task.projectId) {
-      ProjectModel.updateTaskCounts(task.projectId).catch(console.error);
+    // ✅ Update project counts if completion status changed
+    if (projectId) {
+      const wasCompleted = previousStatus === "done";
+      const isNowCompleted = task.status === "done";
+
+      if (!wasCompleted && isNowCompleted) {
+        // Task became completed
+        await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
+      } else if (wasCompleted && !isNowCompleted) {
+        // Task became uncompleted
+        await ProjectModel.updateTaskCounts(projectId, "taskUncompleted");
+      }
     }
 
-    return { success: true, data: task.toObject() };
+    return {
+      success: true,
+      data: task.toObject(),
+    };
   } catch (error) {
     console.error("❌ Toggle task error:", error);
     return {
@@ -471,6 +528,11 @@ export async function archiveTask(
 
     if (!task) {
       return { success: false, error: "Task not found" };
+    }
+
+    // ✅ Recalculate project counts when archiving/unarchiving
+    if (task.projectId) {
+      await ProjectModel.recalculateTaskCounts(task.projectId);
     }
 
     return { success: true, data: task };
@@ -569,34 +631,63 @@ export async function bulkDeleteTasks(ids: string[], userId: string) {
       return { success: false, error: "No valid task IDs provided" };
     }
 
-    // ✅ Get tasks to update project counts
+    // ✅ Get tasks before deletion
     const tasks = await TaskModel.find({
       _id: { $in: validIds },
       userId,
-    }).select("projectId");
+    }).select("projectId status");
 
-    const projectIds = new Set(
-      tasks.map((t) => t.projectId?.toString()).filter(Boolean),
-    );
+    if (tasks.length === 0) {
+      return { success: false, error: "No tasks found to delete" };
+    }
+
+    // ✅ Group by project
+    const projectMap = new Map<string, { total: number; completed: number }>();
+
+    tasks.forEach((task) => {
+      const projectId = task.projectId?.toString();
+      if (!projectId) return;
+
+      if (!projectMap.has(projectId)) {
+        projectMap.set(projectId, { total: 0, completed: 0 });
+      }
+
+      const data = projectMap.get(projectId)!;
+      data.total += 1;
+      if (task.status === "done") {
+        data.completed += 1;
+      }
+    });
 
     // ✅ Delete tasks
-    const result = await TaskModel.deleteMany({
+    const deleteResult = await TaskModel.deleteMany({
       _id: { $in: validIds },
       userId,
     });
 
-    // ✅ Update project counts
-    const updatePromises = Array.from(projectIds).map((id) =>
-      ProjectModel.updateTaskCounts(new Types.ObjectId(id)).catch(
-        console.error,
-      ),
-    );
-    await Promise.allSettled(updatePromises);
+    // ✅ Update each project
+    for (const [projectId, data] of projectMap) {
+      const projectObjectId = new Types.ObjectId(projectId);
+
+      // Decrease total tasks
+      await ProjectModel.updateTaskCounts(projectObjectId, "taskDeleted");
+
+      // If completed tasks were deleted
+      if (data.completed > 0) {
+        for (let i = 0; i < data.completed; i++) {
+          await ProjectModel.updateTaskCounts(
+            projectObjectId,
+            "taskUncompleted",
+          );
+        }
+      }
+    }
 
     return {
       success: true,
       data: {
-        deletedCount: result.deletedCount,
+        deletedCount: deleteResult.deletedCount,
+        affectedProjects: projectMap.size,
       },
     };
   } catch (error) {
@@ -622,27 +713,34 @@ export async function bulkUpdateStatus(
       return { success: false, error: "No valid task IDs provided" };
     }
 
+    // ✅ Get tasks before update
+    const tasks = await TaskModel.find({
+      _id: { $in: validIds },
+      userId,
+    }).select("projectId status");
+
+    // ✅ Update tasks
     const result = await TaskModel.updateMany(
       { _id: { $in: validIds }, userId },
       { $set: { status } },
     );
 
-    // ✅ Update project counts for affected tasks
-    const tasks = await TaskModel.find({
-      _id: { $in: validIds },
-      userId,
-    }).select("projectId");
+    // ✅ Update project counts for each affected task
+    for (const task of tasks) {
+      if (task.projectId) {
+        const wasCompleted = task.status === "done";
+        const willBeCompleted = status === "done";
 
-    const projectIds = new Set(
-      tasks.map((t) => t.projectId?.toString()).filter(Boolean),
-    );
-
-    const updatePromises = Array.from(projectIds).map((id) =>
-      ProjectModel.updateTaskCounts(new Types.ObjectId(id)).catch(
-        console.error,
-      ),
-    );
-    await Promise.allSettled(updatePromises);
+        if (!wasCompleted && willBeCompleted) {
+          await ProjectModel.updateTaskCounts(task.projectId, "taskCompleted");
+        } else if (wasCompleted && !willBeCompleted) {
+          await ProjectModel.updateTaskCounts(
+            task.projectId,
+            "taskUncompleted",
+          );
+        }
+      }
+    }
 
     return {
       success: true,
