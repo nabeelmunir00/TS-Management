@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
 import {
   CheckSquare,
@@ -149,7 +149,6 @@ function getRandomColor() {
 function DashboardSkeleton() {
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
-      {/* Header Skeleton */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <div>
@@ -221,7 +220,6 @@ function DashboardSkeleton() {
 
           {/* Main Grid Skeleton */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Tasks Skeleton */}
             <Card className="lg:col-span-2 border-border shadow-none">
               <CardHeader className="flex flex-row items-center justify-between pb-3 pt-4 px-4">
                 <Skeleton className="h-4 w-24" />
@@ -248,9 +246,7 @@ function DashboardSkeleton() {
               </CardContent>
             </Card>
 
-            {/* Right Col Skeleton */}
             <div className="space-y-4">
-              {/* Projects Skeleton */}
               <Card className="border-border shadow-none">
                 <CardHeader className="flex flex-row items-center justify-between pb-3 pt-4 px-4">
                   <Skeleton className="h-4 w-16" />
@@ -272,7 +268,6 @@ function DashboardSkeleton() {
                 </CardContent>
               </Card>
 
-              {/* AI Skeleton */}
               <Card className="border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 shadow-none">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-2.5">
@@ -289,7 +284,6 @@ function DashboardSkeleton() {
             </div>
           </div>
 
-          {/* Notes Skeleton */}
           <Card className="border-border shadow-none">
             <CardHeader className="flex flex-row items-center justify-between pb-3 pt-4 px-4">
               <Skeleton className="h-4 w-24" />
@@ -314,7 +308,6 @@ function DashboardSkeleton() {
             </CardContent>
           </Card>
 
-          {/* Footer Skeleton */}
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
               <Skeleton className="h-3.5 w-3.5 rounded-full" />
@@ -356,7 +349,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ── Fetch Dashboard Data ──
+  // ─── Fetch Dashboard Data (Single API Call) ──────────────────────────────
+
   const fetchDashboardData = useCallback(async () => {
     if (!user?.id) return;
 
@@ -364,6 +358,7 @@ export default function DashboardPage() {
     setError(null);
 
     try {
+      // ✅ Single API call for everything
       const res = await fetch("/api/dashboard");
       if (!res.ok) throw new Error("Failed to fetch dashboard data");
       const result = await res.json();
@@ -371,7 +366,26 @@ export default function DashboardPage() {
       if (result.success && result.data) {
         const data = result.data;
 
-        // Map Tasks
+        // ─── Set Stats ──────────────────────────────────────────────────
+        if (data.tasks) {
+          setStats({
+            totalTasks: data.tasks.total || 0,
+            completedTasks: data.tasks.completed || 0,
+            inProgress: data.tasks.inProgress || 0,
+            todo: data.tasks.todo || 0,
+            review: data.tasks.review || 0,
+            highPriority: data.tasks.highPriority || 0,
+            overdue: data.tasks.overdue || 0,
+            completionRate: data.tasks.completionRate || 0,
+            totalProjects: data.projects?.total || 0,
+            activeProjects: data.projects?.active || 0,
+            totalNotes: data.notes?.total || 0,
+            pinnedNotes: data.notes?.pinned || 0,
+            dueToday: data.tasks.dueToday || 0,
+          });
+        }
+
+        // ─── Set Tasks ──────────────────────────────────────────────────
         if (data.recentTasks && Array.isArray(data.recentTasks)) {
           setTasks(
             data.recentTasks.map((t: any) => ({
@@ -389,10 +403,11 @@ export default function DashboardPage() {
           setTasks([]);
         }
 
-        // Map Projects
-        if (data.projects && Array.isArray(data.projects)) {
+        // ─── Set Projects ──────────────────────────────────────────────
+        // ✅ Projects list directly from dashboard API
+        if (data.projects?.list && Array.isArray(data.projects.list)) {
           setProjects(
-            data.projects.map((p: any) => ({
+            data.projects.list.map((p: any) => ({
               _id: p._id || p.id,
               id: p._id || p.id,
               name: p.name || "Untitled Project",
@@ -405,7 +420,7 @@ export default function DashboardPage() {
           setProjects([]);
         }
 
-        // Map Notes
+        // ─── Set Notes ──────────────────────────────────────────────────
         if (data.recentNotes && Array.isArray(data.recentNotes)) {
           setNotes(
             data.recentNotes.map((n: any) => ({
@@ -419,25 +434,6 @@ export default function DashboardPage() {
           );
         } else {
           setNotes([]);
-        }
-
-        // Map Stats
-        if (data.tasks) {
-          setStats({
-            totalTasks: data.tasks.total || 0,
-            completedTasks: data.tasks.completed || 0,
-            inProgress: data.tasks.inProgress || 0,
-            todo: data.tasks.todo || 0,
-            review: data.tasks.review || 0,
-            highPriority: data.tasks.highPriority || 0,
-            overdue: data.tasks.overdue || 0,
-            completionRate: data.tasks.completionRate || 0,
-            totalProjects: data.projects?.total || 0,
-            activeProjects: data.projects?.active || 0,
-            totalNotes: data.notes?.total || 0,
-            pinnedNotes: data.notes?.pinned || 0,
-            dueToday: data.tasks.dueToday || 0,
-          });
         }
       }
     } catch (err) {
@@ -554,7 +550,7 @@ export default function DashboardPage() {
     },
   ];
 
-  // ── Loading State with Exact Layout ──
+  // ── Loading State ──
   if (!isLoaded || loading) {
     return <DashboardSkeleton />;
   }
@@ -575,7 +571,7 @@ export default function DashboardPage() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-screen bg-background overflow-hidden">
+    <div className="flex flex-col h-screen bg-background ">
       {/* ── Top bar ── */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <div className="flex items-center gap-3">

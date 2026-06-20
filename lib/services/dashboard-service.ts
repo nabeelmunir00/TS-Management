@@ -15,6 +15,7 @@ export interface DashboardStats {
     highPriority: number;
     overdue: number;
     completionRate: number;
+    dueToday: number;
   };
   projects: {
     total: number;
@@ -22,6 +23,7 @@ export interface DashboardStats {
     onHold: number;
     completed: number;
     archived: number;
+    list: any; // ✅ Active projects list
   };
   notes: {
     total: number;
@@ -29,6 +31,8 @@ export interface DashboardStats {
     archived: number;
     active: number;
   };
+  recentTasks: any[];
+  recentNotes: any[];
   recentActivity: {
     id: string;
     action: string;
@@ -92,6 +96,19 @@ export async function getDashboardStats(
     overdue: 0,
   };
 
+  // ✅ Calculate due today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dueToday = await TaskModel.countDocuments({
+    userId,
+    isArchived: false,
+    dueDate: { $gte: today, $lt: tomorrow },
+    status: { $ne: "done" },
+  });
+
   // ─── Get Project Stats ────────────────────────────────────────────
   const projectStats = await ProjectModel.aggregate([
     { $match: { userId } },
@@ -117,6 +134,16 @@ export async function getDashboardStats(
     archived: 0,
   };
 
+  // ─── Get Active Projects List ────────────────────────────────────
+  const activeProjects = await ProjectModel.find({
+    userId,
+    isArchived: false,
+    status: "active",
+  })
+    .sort({ isFavorite: -1, createdAt: -1 })
+    .limit(5)
+    .lean();
+
   // ─── Get Note Stats ──────────────────────────────────────────────
   const noteStats = await NoteModel.aggregate([
     { $match: { userId } },
@@ -138,6 +165,24 @@ export async function getDashboardStats(
     active: 0,
   };
 
+  // ─── Get Recent Tasks ─────────────────────────────────────────────
+  const recentTasks = await TaskModel.find({
+    userId,
+    isArchived: false,
+  })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .lean();
+
+  // ─── Get Recent Notes ─────────────────────────────────────────────
+  const recentNotes = await NoteModel.find({
+    userId,
+    isArchived: false,
+  })
+    .sort({ createdAt: -1 })
+    .limit(3)
+    .lean();
+
   // ─── Get Recent Activity ─────────────────────────────────────────
   const recentActivity = await ActivityModel.find({ userId })
     .sort({ createdAt: -1 })
@@ -155,9 +200,37 @@ export async function getDashboardStats(
     tasks: {
       ...tasks,
       completionRate,
+      dueToday,
     },
-    projects,
+    projects: {
+      ...projects,
+      list: activeProjects.map((p: any) => ({
+        _id: p._id,
+        id: p._id,
+        name: p.name,
+        tasksCount: p.tasksCount || 0,
+        completedTasks: p.completedTasks || 0,
+        color: p.color || "#6366f1",
+      })),
+    },
     notes,
+    recentTasks: recentTasks.map((t: any) => ({
+      _id: t._id,
+      id: t._id,
+      title: t.title,
+      projectName: t.projectName || "No Project",
+      priority: t.priority,
+      status: t.status,
+      dueDate: t.dueDate,
+    })),
+    recentNotes: recentNotes.map((n: any) => ({
+      _id: n._id,
+      id: n._id,
+      title: n.title,
+      content: n.content,
+      tags: n.tags,
+      createdAt: n.createdAt,
+    })),
     recentActivity: recentActivity.map((activity: any) => ({
       id: activity._id.toString(),
       action: activity.action,
@@ -200,13 +273,13 @@ async function getWeeklyProgress(userId: string) {
     dayMap.set(day, { created: 0, completed: 0 });
   });
 
-  tasks.forEach((task) => {
+  tasks.forEach((task: any) => {
     const day = days[task.createdAt.getDay() - 1] || "Mon";
     const data = dayMap.get(day);
     if (data) data.created += 1;
   });
 
-  completed.forEach((task) => {
+  completed.forEach((task: any) => {
     const day = days[task.updatedAt.getDay() - 1] || "Mon";
     const data = dayMap.get(day);
     if (data) data.completed += 1;

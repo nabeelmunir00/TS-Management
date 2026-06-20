@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ✅ Rate Limiting
+    // Rate Limiting
     const rateLimitResult = await RateLimiter.check(`dashboard:${userId}`, {
       maxRequests: 50,
       windowMs: 60 * 1000,
@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
     }
 
     const stats = await getDashboardStats(userId);
+
+    // ✅ Debug: Log the response structure
+    console.log("📊 Dashboard API - Projects:", stats.projects);
+    console.log("📊 Dashboard API - Recent Tasks:", stats.recentTasks?.length);
 
     return NextResponse.json({
       success: true,
