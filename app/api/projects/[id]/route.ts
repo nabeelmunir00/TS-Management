@@ -1,63 +1,64 @@
+// app/api/projects/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import connectDB from "@/lib/db";
-import Project from "@/lib/models/Project";
+import {
+  getProjectById,
+  updateProject,
+  deleteProject,
+} from "@/lib/services/project-service";
+import { RateLimiter } from "@/lib/rate-limiter";
 
-async function getTaskId(context: { params: { id: string } }) {
-  const params = await context.params;
-  return params.id;
-}
+// ─── GET: Single Project ──────────────────────────────────────────────────
 
-// ─── GET: Single project ──────────────────────────────────────────────────
 export async function GET(
-  req: NextRequest,
-  context: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
-    const id = await getTaskId(context);
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 },
+      );
     }
 
-    await connectDB();
+    const { id } = await params;
 
-    const project = await Project.findOne({
-      _id: id,
-      userId,
-    }).lean();
+    // ✅ Rate Limiting
+    const rateLimitResult = await RateLimiter.check(`project:${userId}:${id}`, {
+      maxRequests: 100,
+      windowMs: 60 * 1000,
+    });
 
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: rateLimitResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          },
+        },
+      );
     }
 
-    // Transform response
-    const transformedProject = {
-      _id: project._id.toString(),
-      id: project._id.toString(),
-      name: project.name,
-      description: project.description || "",
-      color: project.color || "#6366f1",
-      icon: project.icon || "",
-      status: project.isArchived ? "archived" : "active",
-      priority: project.priority || "medium",
-      isStarred: project.isFavorite || false,
-      isArchived: project.isArchived || false,
-      tags: project.tags || [],
-      startDate: project.startDate
-        ? project.startDate.toISOString().split("T")[0]
-        : undefined,
-      endDate: project.endDate
-        ? project.endDate.toISOString().split("T")[0]
-        : undefined,
-      teamMembers: project.teamMembers || [],
-      tasksCount: project.tasksCount || 0,
-      completedTasks: project.completedTasks || 0,
-      createdAt: project.createdAt.toISOString().split("T")[0],
-      updatedAt: project.updatedAt.toISOString().split("T")[0],
-    };
+    const result = await getProjectById(id, userId);
 
-    return NextResponse.json(transformedProject);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === "Project not found" ? 404 : 500 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+    });
   } catch (error) {
     console.error("❌ GET /api/projects/[id] error:", error);
     return NextResponse.json(
@@ -67,243 +68,167 @@ export async function GET(
   }
 }
 
-// ─── PATCH: Update project ────────────────────────────────────────────────
+// ─── PATCH: Update Project ─────────────────────────────────────────────────
+
 export async function PATCH(
-  req: NextRequest,
-  context: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
-    const id = await getTaskId(context);
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 },
+      );
     }
 
-    await connectDB();
+    const { id } = await params;
 
-    const body = await req.json();
-    const { action } = body;
+    // ✅ Rate Limiting
+    const rateLimitResult = await RateLimiter.check(`project:${userId}:${id}`, {
+      maxRequests: 30,
+      windowMs: 60 * 1000,
+    });
 
-    // Handle special actions
-    if (action === "toggle-star") {
-      const project = await Project.findOne({ _id: id, userId });
-      if (!project) {
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: rateLimitResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          },
+        },
+      );
+    }
+
+    const body = await request.json();
+    const { action, ...updateData } = body;
+
+    // ✅ Handle action-based updates
+    if (action === "toggle-star" || action === "toggle-archive") {
+      const result = await updateProject({
+        id,
+        userId,
+        action,
+      });
+
+      if (!result.success) {
         return NextResponse.json(
-          { error: "Project not found" },
-          { status: 404 },
+          { error: result.error },
+          { status: result.error === "Project not found" ? 404 : 500 },
         );
       }
 
-      project.isFavorite = !project.isFavorite;
-      project.updatedAt = new Date();
-      await project.save();
-
-      const transformedProject = {
-        _id: project._id.toString(),
-        id: project._id.toString(),
-        name: project.name,
-        description: project.description || "",
-        color: project.color || "#6366f1",
-        icon: project.icon || "",
-        status: project.status,
-        priority: project.priority || "medium",
-        isStarred: project.isFavorite || false,
-        isArchived: project.isArchived || false,
-        tags: project.tags || [],
-        startDate: project.startDate
-          ? project.startDate.toISOString().split("T")[0]
-          : undefined,
-        endDate: project.endDate
-          ? project.endDate.toISOString().split("T")[0]
-          : undefined,
-        teamMembers: project.teamMembers || [],
-        tasksCount: project.tasksCount || 0,
-        completedTasks: project.completedTasks || 0,
-        createdAt: project.createdAt.toISOString().split("T")[0],
-        updatedAt: project.updatedAt.toISOString().split("T")[0],
-      };
-
-      return NextResponse.json(transformedProject);
+      return NextResponse.json({
+        success: true,
+        data: result.data,
+        message:
+          action === "toggle-star"
+            ? "Project star toggled"
+            : "Project archive toggled",
+      });
     }
 
-    if (action === "toggle-archive") {
-      const project = await Project.findOne({ _id: id, userId });
-      if (!project) {
-        return NextResponse.json(
-          { error: "Project not found" },
-          { status: 404 },
-        );
-      }
+    // ✅ Regular update
+    const result = await updateProject({
+      id,
+      userId,
+      ...updateData,
+    });
 
-      project.isArchived = !project.isArchived;
-      project.updatedAt = new Date();
-      await project.save();
-
-      const transformedProject = {
-        _id: project._id.toString(),
-        id: project._id.toString(),
-        name: project.name,
-        description: project.description || "",
-        color: project.color || "#6366f1",
-        icon: project.icon || "",
-        status: project.status || "active",
-        priority: project.priority || "medium",
-        isStarred: project.isFavorite || false,
-        isArchived: project.isArchived || false,
-        tags: project.tags || [],
-        startDate: project.startDate
-          ? project.startDate.toISOString().split("T")[0]
-          : undefined,
-        endDate: project.endDate
-          ? project.endDate.toISOString().split("T")[0]
-          : undefined,
-        teamMembers: project.teamMembers || [],
-        tasksCount: project.tasksCount || 0,
-        completedTasks: project.completedTasks || 0,
-        createdAt: project.createdAt.toISOString().split("T")[0],
-        updatedAt: project.updatedAt.toISOString().split("T")[0],
-      };
-
-      return NextResponse.json(transformedProject);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === "Project not found" ? 404 : 500 },
+      );
     }
 
-    // ─── Regular Update ──────────────────────────────────────────────────
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
-
-    // Basic fields
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.description !== undefined)
-      updateData.description = body.description;
-    if (body.color !== undefined) updateData.color = body.color;
-    if (body.icon !== undefined) updateData.icon = body.icon;
-
-    // 🔥 FIX: Priority - now properly stored in model
-    if (body.priority !== undefined) {
-      updateData.priority = body.priority;
-    }
-
-    // Tags and team members
-    if (body.tags !== undefined) updateData.tags = body.tags;
-    if (body.teamMembers !== undefined)
-      updateData.teamMembers = body.teamMembers;
-
-    // Task counts
-    if (body.tasksCount !== undefined) updateData.tasksCount = body.tasksCount;
-    if (body.completedTasks !== undefined)
-      updateData.completedTasks = body.completedTasks;
-
-    // Dates
-    if (body.startDate !== undefined) {
-      updateData.startDate = body.startDate
-        ? new Date(body.startDate)
-        : undefined;
-    }
-    if (body.endDate !== undefined) {
-      updateData.endDate = body.endDate ? new Date(body.endDate) : undefined;
-    }
-    if (body.status !== undefined) {
-      // Map status to isArchived
-      updateData.status = body.status;
-    }
-
-    // 🔥 FIX: Status handling
-    if (body.status !== undefined) {
-      // Map status to isArchived
-      updateData.isArchived = body.status === "archived";
-    }
-
-    // Handle isArchived directly if provided
-    if (body.isArchived !== undefined) {
-      updateData.isArchived = body.isArchived;
-    }
-
-    // Handle favorite/starred
-    if (body.isStarred !== undefined) {
-      updateData.isFavorite = body.isStarred;
-    }
-
-    // Debug log
-    console.log("🔄 Update Data:", updateData);
-
-    const project = await Project.findOneAndUpdate(
-      { _id: id, userId },
-      updateData,
-      { new: true, runValidators: true },
-    ).lean();
-
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-
-    // Transform response
-    const transformedProject = {
-      _id: project._id.toString(),
-      id: project._id.toString(),
-      name: project.name,
-      description: project.description || "",
-      color: project.color || "#6366f1",
-      icon: project.icon || "",
-      status: project.status || "active",
-      priority: project.priority || "medium",
-      isStarred: project.isFavorite || false,
-      isArchived: project.isArchived || false,
-      tags: project.tags || [],
-      startDate: project.startDate
-        ? project.startDate.toISOString().split("T")[0]
-        : undefined,
-      endDate: project.endDate
-        ? project.endDate.toISOString().split("T")[0]
-        : undefined,
-      teamMembers: project.teamMembers || [],
-      tasksCount: project.tasksCount || 0,
-      completedTasks: project.completedTasks || 0,
-      createdAt: project.createdAt.toISOString().split("T")[0],
-      updatedAt: project.updatedAt.toISOString().split("T")[0],
-    };
-
-    return NextResponse.json(transformedProject);
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      message: "Project updated successfully",
+    });
   } catch (error) {
     console.error("❌ PATCH /api/projects/[id] error:", error);
     return NextResponse.json(
-      { error: "Failed to update project" },
+      {
+        error: "Failed to update project",
+        details:
+          process.env.NODE_ENV === "development"
+            ? (error as Error).message
+            : undefined,
+      },
       { status: 500 },
     );
   }
 }
 
-// ─── DELETE: Delete project ──────────────────────────────────────────────
+// ─── DELETE: Delete Project ─────────────────────────────────────────────────
+
 export async function DELETE(
-  req: NextRequest,
-  context: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
   try {
     const { userId } = await auth();
-    const id = await getTaskId(context);
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 },
+      );
     }
 
-    await connectDB();
+    const { id } = await params;
 
-    const result = await Project.findOneAndDelete({
-      _id: id,
-      userId,
+    // ✅ Rate Limiting
+    const rateLimitResult = await RateLimiter.check(`project:${userId}:${id}`, {
+      maxRequests: 20,
+      windowMs: 60 * 1000,
     });
 
-    if (!result) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: rateLimitResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          },
+        },
+      );
     }
 
-    return NextResponse.json(
-      { message: "Project deleted successfully" },
-      { status: 200 },
-    );
+    const result = await deleteProject(id, userId);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === "Project not found" ? 404 : 500 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Project deleted successfully",
+    });
   } catch (error) {
     console.error("❌ DELETE /api/projects/[id] error:", error);
     return NextResponse.json(
-      { error: "Failed to delete project" },
+      {
+        error: "Failed to delete project",
+        details:
+          process.env.NODE_ENV === "development"
+            ? (error as Error).message
+            : undefined,
+      },
       { status: 500 },
     );
   }

@@ -1,8 +1,9 @@
 // components/ProjectFormModal.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, FolderPlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,17 +31,38 @@ import { PROJECT_COLORS } from "@/constants/project";
 interface ProjectFormModalProps {
   open: boolean;
   onClose: () => void;
-  onSave: (project: Project) => void;
+  onSave: (project: Project) => Promise<void>;
   project?: Project | null;
+  isLoading?: boolean;
 }
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "on-hold", label: "On Hold" },
+  { value: "completed", label: "Completed" },
+  { value: "archived", label: "Archived" },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: "high", label: "🔴 High" },
+  { value: "medium", label: "🟡 Medium" },
+  { value: "low", label: "🟢 Low" },
+];
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export function ProjectFormModal({
   open,
   onClose,
   onSave,
   project = null,
+  isLoading = false,
 }: ProjectFormModalProps) {
-  const isEdit = !!project;
+  const isEdit = !!project?._id || !!project?.id;
+
+  // ── Form state ──
   const [form, setForm] = useState<Partial<Project>>({
     name: "",
     description: "",
@@ -55,10 +77,24 @@ export function ProjectFormModal({
   const [tagInput, setTagInput] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // ── Sync form with project ──
   useEffect(() => {
     if (open) {
-      setForm(
-        project || {
+      if (project) {
+        setForm({
+          name: project.name || "",
+          description: project.description || "",
+          status: project.status || "active",
+          priority: project.priority || "medium",
+          color: project.color || PROJECT_COLORS[0],
+          tags: project.tags || [],
+          startDate:
+            project.startDate || new Date().toISOString().split("T")[0],
+          endDate: project.endDate || "",
+          teamMembers: project.teamMembers || [],
+        });
+      } else {
+        setForm({
           name: "",
           description: "",
           status: "active",
@@ -68,18 +104,20 @@ export function ProjectFormModal({
           startDate: new Date().toISOString().split("T")[0],
           endDate: "",
           teamMembers: [],
-        },
-      );
+        });
+      }
       setTagInput("");
     }
   }, [open, project]);
 
+  // ── Tag helpers ──
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && tagInput.trim()) {
       e.preventDefault();
       const normalized = tagInput.trim().toLowerCase().replace(/\s+/g, "-");
       if (!form.tags?.includes(normalized)) {
         setForm((f) => ({ ...f, tags: [...(f.tags || []), normalized] }));
+        toast.success(`Tag #${normalized} added`);
       }
       setTagInput("");
     }
@@ -87,38 +125,55 @@ export function ProjectFormModal({
 
   const removeTag = (tag: string) => {
     setForm((f) => ({ ...f, tags: f.tags?.filter((t) => t !== tag) }));
+    toast.info(`Tag #${tag} removed`);
   };
 
-  const handleSubmit = () => {
-    if (!form.name?.trim()) return;
+  // ── Submit ──
+  const handleSubmit = async () => {
+    if (!form.name?.trim()) {
+      toast.error("Project name is required");
+      return;
+    }
+
     setIsSaving(true);
 
-    const saved: Project = {
-      _id: project?._id || Date.now().toString(),
-      id: project?.id || Date.now().toString(),
-      name: form.name!,
-      description: form.description || "",
-      status: form.status as Project["status"],
-      priority: form.priority as Project["priority"],
-      color: form.color,
-      tags: form.tags || [],
-      startDate: form.startDate,
-      endDate: form.endDate,
-      teamMembers: form.teamMembers || [],
-      tasksCount: 0,
-      completedTasks: 0,
-      isStarred: project?.isStarred || false,
-      isArchived: form.status === "archived" || false,
-      createdAt: project?.createdAt || new Date().toISOString().split("T")[0],
-    };
+    try {
+      const saved: Project = {
+        _id: project?._id || project?.id || "",
+        id: project?.id || "",
+        name: form.name.trim(),
+        description: form.description?.trim() || "",
+        status: form.status as Project["status"],
+        priority: form.priority as Project["priority"],
+        color: form.color || PROJECT_COLORS[0],
+        tags: form.tags || [],
+        startDate: form.startDate,
+        endDate: form.endDate,
+        teamMembers: form.teamMembers || [],
+        tasksCount: project?.tasksCount || 0,
+        completedTasks: project?.completedTasks || 0,
+        isStarred: project?.isStarred || false,
+        isArchived: form.status === "archived" || false,
+        createdAt: project?.createdAt || new Date().toISOString().split("T")[0],
+        updatedAt: new Date().toISOString().split("T")[0],
+      };
 
-    setTimeout(() => {
-      onSave(saved);
+      await onSave(saved);
+      // Toast will be handled by parent
+    } catch (error) {
+      console.error("❌ Submit error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save project",
+      );
+    } finally {
       setIsSaving(false);
-      onClose();
-    }, 600);
+    }
   };
 
+  const isValid = form.name?.trim().length > 0;
+  const saving = isLoading || isSaving;
+
+  // ── Render ──
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="sm:max-w-[550px]">
@@ -146,6 +201,7 @@ export function ProjectFormModal({
               placeholder="e.g. DevHub v2"
               className="text-sm h-10"
               autoFocus
+              disabled={saving}
             />
           </div>
 
@@ -160,6 +216,7 @@ export function ProjectFormModal({
               placeholder="What is this project about?"
               className="text-sm resize-none min-h-[60px]"
               rows={2}
+              disabled={saving}
             />
           </div>
 
@@ -172,10 +229,11 @@ export function ProjectFormModal({
                   <button
                     key={color}
                     onClick={() => setForm({ ...form, color })}
+                    disabled={saving}
                     className={cn(
                       "w-6 h-6 rounded-full transition-all border-2",
                       form.color === color
-                        ? "border-violet-600 scale-110"
+                        ? "border-violet-600 scale-110 ring-2 ring-violet-200"
                         : "border-transparent hover:scale-105",
                     )}
                     style={{ backgroundColor: color }}
@@ -191,15 +249,17 @@ export function ProjectFormModal({
                 onValueChange={(v: Project["status"]) =>
                   setForm({ ...form, status: v })
                 }
+                disabled={saving}
               >
                 <SelectTrigger className="text-sm h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on-hold">On Hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -211,14 +271,17 @@ export function ProjectFormModal({
                 onValueChange={(v: Project["priority"]) =>
                   setForm({ ...form, priority: v })
                 }
+                disabled={saving}
               >
                 <SelectTrigger className="text-sm h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="high">🔴 High</SelectItem>
-                  <SelectItem value="medium">🟡 Medium</SelectItem>
-                  <SelectItem value="low">🟢 Low</SelectItem>
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -235,6 +298,7 @@ export function ProjectFormModal({
                   setForm({ ...form, startDate: e.target.value })
                 }
                 className="text-sm h-10"
+                disabled={saving}
               />
             </div>
             <div className="space-y-1.5">
@@ -244,6 +308,8 @@ export function ProjectFormModal({
                 value={form.endDate || ""}
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                 className="text-sm h-10"
+                disabled={saving}
+                min={form.startDate}
               />
             </div>
           </div>
@@ -263,6 +329,7 @@ export function ProjectFormModal({
                     <button
                       onClick={() => removeTag(tag)}
                       className="hover:text-violet-900 transition-colors"
+                      disabled={saving}
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
@@ -276,23 +343,24 @@ export function ProjectFormModal({
               onKeyDown={handleTagKeyDown}
               placeholder="Type tag and press Enter..."
               className="text-sm h-10"
+              disabled={saving}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!form.name?.trim() || isSaving}
+            disabled={!isValid || saving}
             className="bg-violet-600 hover:bg-violet-700 text-white"
           >
-            {isSaving ? (
+            {saving ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
+                {isEdit ? "Saving..." : "Creating..."}
               </>
             ) : isEdit ? (
               "Update Project"
