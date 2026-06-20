@@ -73,7 +73,7 @@ export default function InvitePage() {
   const { token } = useParams();
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
-  const { signIn } = useClerk();
+  const { signIn, redirectToSignIn } = useClerk();
 
   // ── State ──
   const [loading, setLoading] = useState(true);
@@ -152,6 +152,14 @@ export default function InvitePage() {
     } finally {
       setAccepting(false);
     }
+  };
+
+  // ─── Handle Sign In ──────────────────────────────────────────────────────
+
+  const handleSignIn = () => {
+    // ✅ Use redirectToSignIn with redirect URL
+    const redirectUrl = `/invite/${token}`;
+    redirectToSignIn({ redirectUrl });
   };
 
   // ─── Loading State ──
@@ -263,10 +271,11 @@ export default function InvitePage() {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={() => signIn()}
+              onClick={handleSignIn}
               className="bg-violet-600 hover:bg-violet-700 text-white w-full gap-2"
             >
-              Sign In
+              <Mail className="w-4 h-4" />
+              Sign In to Accept
               <ArrowRight className="w-4 h-4" />
             </Button>
           </CardFooter>
