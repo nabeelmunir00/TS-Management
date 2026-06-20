@@ -1,6 +1,7 @@
 // lib/services/task-service.ts
-import TaskModel, { TaskStatus, Priority } from "../models/Task";
+import TaskModel, { TaskStatus, Priority, ITask } from "../models/Task";
 import ProjectModel from "../models/Project";
+import ActivityModel from "../models/Activity";
 import connectDB from "../db";
 import { Types } from "mongoose";
 import { cache } from "react";
@@ -46,10 +47,44 @@ export interface TaskFilters {
   sortOrder?: "asc" | "desc";
 }
 
+export interface PaginatedResponse {
+  tasks: ITask[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+
+// ─── Helper: Log Activity ──────────────────────────────────────────────────
+
+async function logActivity(
+  userId: string,
+  action: "create" | "update" | "delete" | "complete" | "archive" | "unarchive",
+  entityType: "task" | "project" | "note",
+  entityId: Types.ObjectId,
+  entityName: string,
+  changes?: any,
+) {
+  try {
+    await ActivityModel.create({
+      userId,
+      action,
+      entityType,
+      entityId,
+      entityName,
+      changes,
+    });
+  } catch (error) {
+    console.error("❌ Failed to log activity:", error);
+  }
+}
 
 // ─── 1. CREATE TASK ──────────────────────────────────────────────────────────
 
@@ -121,6 +156,9 @@ export async function createTask(data: CreateTaskInput) {
         await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
       }
     }
+
+    // ✅ Log Activity
+    await logActivity(data.userId, "create", "task", task._id, task.title);
 
     return {
       success: true,
@@ -384,6 +422,11 @@ export async function updateTask(data: UpdateTaskInput) {
       }
     }
 
+    // ✅ Log Activity
+    await logActivity(data.userId, "update", "task", task._id, task.title, {
+      changes: updateData,
+    });
+
     return { success: true, data: task };
   } catch (error) {
     console.error("❌ Update task error:", error);
@@ -414,6 +457,7 @@ export async function deleteTask(id: string, userId: string) {
     const projectId = task.projectId;
     const wasCompleted = task.status === "done";
     const taskId = task.taskId || task._id;
+    const taskTitle = task.title;
 
     // ✅ Delete task
     await TaskModel.findOneAndDelete({ _id: id, userId });
@@ -428,6 +472,9 @@ export async function deleteTask(id: string, userId: string) {
         await ProjectModel.updateTaskCounts(projectId, "taskUncompleted");
       }
     }
+
+    // ✅ Log Activity
+    await logActivity(userId, "delete", "task", task._id, taskTitle);
 
     console.log(`✅ Task ${taskId} deleted successfully`);
 
@@ -467,6 +514,7 @@ export async function toggleTaskStatus(id: string, userId: string) {
 
     const previousStatus = task.status;
     const projectId = task.projectId;
+    const taskTitle = task.title;
 
     // ✅ Cycle through statuses
     const statusCycle: Record<TaskStatus, TaskStatus> = {
@@ -487,6 +535,9 @@ export async function toggleTaskStatus(id: string, userId: string) {
       if (!wasCompleted && isNowCompleted) {
         // Task became completed
         await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
+
+        // ✅ Log Activity - Completed
+        await logActivity(userId, "complete", "task", task._id, taskTitle);
       } else if (wasCompleted && !isNowCompleted) {
         // Task became uncompleted
         await ProjectModel.updateTaskCounts(projectId, "taskUncompleted");
@@ -534,6 +585,15 @@ export async function archiveTask(
     if (task.projectId) {
       await ProjectModel.recalculateTaskCounts(task.projectId);
     }
+
+    // ✅ Log Activity
+    await logActivity(
+      userId,
+      archive ? "archive" : "unarchive",
+      "task",
+      task._id,
+      task.title,
+    );
 
     return { success: true, data: task };
   } catch (error) {
@@ -635,7 +695,7 @@ export async function bulkDeleteTasks(ids: string[], userId: string) {
     const tasks = await TaskModel.find({
       _id: { $in: validIds },
       userId,
-    }).select("projectId status");
+    }).select("projectId status title");
 
     if (tasks.length === 0) {
       return { success: false, error: "No tasks found to delete" };
@@ -683,6 +743,17 @@ export async function bulkDeleteTasks(ids: string[], userId: string) {
       }
     }
 
+    // ✅ Log Activities for each deleted task
+    for (const task of tasks) {
+      await logActivity(
+        userId,
+        "delete",
+        "task",
+        task._id,
+        task.title || "Untitled",
+      );
+    }
+
     return {
       success: true,
       data: {
@@ -717,7 +788,7 @@ export async function bulkUpdateStatus(
     const tasks = await TaskModel.find({
       _id: { $in: validIds },
       userId,
-    }).select("projectId status");
+    }).select("projectId status title");
 
     // ✅ Update tasks
     const result = await TaskModel.updateMany(
@@ -733,6 +804,15 @@ export async function bulkUpdateStatus(
 
         if (!wasCompleted && willBeCompleted) {
           await ProjectModel.updateTaskCounts(task.projectId, "taskCompleted");
+
+          // ✅ Log Activity - Completed
+          await logActivity(
+            userId,
+            "complete",
+            "task",
+            task._id,
+            task.title || "Untitled",
+          );
         } else if (wasCompleted && !willBeCompleted) {
           await ProjectModel.updateTaskCounts(
             task.projectId,
@@ -861,6 +941,77 @@ export async function searchTasks(
   }
 }
 
+// ─── 13. GET TASK DASHBOARD STATS ──────────────────────────────────────────
+
+export async function getTaskDashboardStats(userId: string) {
+  try {
+    await connectDB();
+
+    const stats = await TaskModel.aggregate([
+      { $match: { userId, isArchived: false } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
+          inProgress: {
+            $sum: { $cond: [{ $eq: ["$status", "in-progress"] }, 1, 0] },
+          },
+          todo: { $sum: { $cond: [{ $eq: ["$status", "todo"] }, 1, 0] } },
+          review: { $sum: { $cond: [{ $eq: ["$status", "review"] }, 1, 0] } },
+          highPriority: {
+            $sum: { $cond: [{ $in: ["$priority", ["high", "urgent"]] }, 1, 0] },
+          },
+          overdue: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $lt: ["$dueDate", new Date()] },
+                    { $ne: ["$status", "done"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const result = stats[0] || {
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      todo: 0,
+      review: 0,
+      highPriority: 0,
+      overdue: 0,
+    };
+
+    // Calculate completion rate
+    const completionRate =
+      result.total > 0
+        ? Math.round((result.completed / result.total) * 100)
+        : 0;
+
+    return {
+      success: true,
+      data: {
+        ...result,
+        completionRate,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Get task dashboard stats error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch stats",
+    };
+  }
+}
+
 // ─── Validation Helpers ──────────────────────────────────────────────────────
 
 function validateCreateTask(data: CreateTaskInput): string | null {
@@ -912,4 +1063,8 @@ export const getCachedTask = cache(async (id: string, userId: string) => {
 
 export const getCachedTaskStats = cache(async (userId: string) => {
   return getTaskStats(userId);
+});
+
+export const getCachedTaskDashboardStats = cache(async (userId: string) => {
+  return getTaskDashboardStats(userId);
 });
