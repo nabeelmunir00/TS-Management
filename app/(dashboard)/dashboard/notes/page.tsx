@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   Search,
@@ -9,7 +9,6 @@ import {
   Trash2,
   Copy,
   Archive,
-  FileText,
   StickyNote,
   LayoutGrid,
   ListFilter,
@@ -23,7 +22,6 @@ import {
   PinOff,
   Clock,
   CheckCircle2,
-  Sparkles,
   Folder,
   User,
   Briefcase,
@@ -32,9 +30,11 @@ import {
   GraduationCap,
   Rocket,
   Hash,
+  RefreshCw,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,7 @@ import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 interface Note {
   _id: string;
   id?: string;
+  noteId?: string;
   title: string;
   content: string;
   category?: string;
@@ -93,6 +94,8 @@ interface Note {
   isArchived: boolean;
   color?: string;
   reminderDate?: string;
+  projectId?: string;
+  projectName?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -125,14 +128,21 @@ const CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  personal: "bg-blue-50 text-blue-600 border-blue-200",
-  work: "bg-purple-50 text-purple-600 border-purple-200",
-  ideas: "bg-amber-50 text-amber-600 border-amber-200",
-  tasks: "bg-emerald-50 text-emerald-600 border-emerald-200",
-  meeting: "bg-rose-50 text-rose-600 border-rose-200",
-  study: "bg-indigo-50 text-indigo-600 border-indigo-200",
-  project: "bg-violet-50 text-violet-600 border-violet-200",
-  other: "bg-gray-50 text-gray-600 border-gray-200",
+  personal:
+    "bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400",
+  work: "bg-purple-50 text-purple-600 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400",
+  ideas:
+    "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400",
+  tasks:
+    "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400",
+  meeting:
+    "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400",
+  study:
+    "bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400",
+  project:
+    "bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400",
+  other:
+    "bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-800/50 dark:text-gray-400",
 };
 
 // ─── Note Card ──────────────────────────────────────────────────────────────
@@ -180,6 +190,9 @@ function NoteCard({
     return CATEGORY_COLORS[categoryId] || CATEGORY_COLORS.other;
   };
 
+  const isOverdue =
+    note.reminderDate && new Date(note.reminderDate) < new Date();
+
   if (view === "list") {
     return (
       <div
@@ -226,10 +239,22 @@ function NoteCard({
                   {getCategoryLabel(note.category)}
                 </Badge>
               )}
+              {isOverdue && !note.isArchived && (
+                <Badge variant="destructive" className="text-[10px] gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Overdue
+                </Badge>
+              )}
             </div>
             {note.content && (
               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                 {note.content}
+              </p>
+            )}
+            {note.projectName && (
+              <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                <Folder className="w-3 h-3" />
+                {note.projectName}
               </p>
             )}
           </div>
@@ -253,8 +278,8 @@ function NoteCard({
           {/* Reminder */}
           {note.reminderDate && (
             <Tooltip>
-              <TooltipTrigger>
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-help">
                   <Calendar className="w-3 h-3" />
                   {format(new Date(note.reminderDate), "MMM d")}
                 </div>
@@ -325,7 +350,7 @@ function NoteCard({
         "group relative bg-card border rounded-lg p-4 transition-all",
         "hover:border-violet-200 hover:shadow-sm hover:-translate-y-0.5",
         note.isArchived && "opacity-60",
-        note.isPinned && "border-amber-200",
+        note.isPinned && "border-amber-200 dark:border-amber-800",
       )}
       style={
         note.color && note.color !== "#FFFFFF"
@@ -377,6 +402,12 @@ function NoteCard({
               +{note.tags.length - 2}
             </Badge>
           )}
+          {isOverdue && !note.isArchived && (
+            <Badge variant="destructive" className="text-[10px] gap-1">
+              <AlertCircle className="w-3 h-3" />
+              Overdue
+            </Badge>
+          )}
         </div>
 
         {/* Footer */}
@@ -386,6 +417,12 @@ function NoteCard({
               <Clock className="w-3 h-3" />
               {format(new Date(note.createdAt), "MMM d")}
             </span>
+            {note.projectName && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Folder className="w-3 h-3" />
+                {note.projectName}
+              </span>
+            )}
           </div>
           {note.reminderDate && (
             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -450,13 +487,15 @@ function NoteFormModal({
   onClose,
   onSave,
   note = null,
+  isLoading = false,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (note: Note) => void;
+  onSave: (note: Note) => Promise<void>;
   note?: Note | null;
+  isLoading?: boolean;
 }) {
-  const isEdit = !!note;
+  const isEdit = !!note?._id;
   const [form, setForm] = useState<Partial<Note>>({
     title: "",
     content: "",
@@ -471,16 +510,29 @@ function NoteFormModal({
 
   useEffect(() => {
     if (open) {
-      setForm(
-        note || {
+      if (note) {
+        setForm({
+          title: note.title || "",
+          content: note.content || "",
+          category: note.category || "",
+          tags: note.tags || [],
+          color: note.color || "#FFFFFF",
+          reminderDate: note.reminderDate || "",
+          isPinned: note.isPinned || false,
+          isArchived: note.isArchived || false,
+        });
+      } else {
+        setForm({
           title: "",
           content: "",
           category: "",
           tags: [],
           color: "#FFFFFF",
           reminderDate: "",
-        },
-      );
+          isPinned: false,
+          isArchived: false,
+        });
+      }
       setTagInput("");
     }
   }, [open, note]);
@@ -500,30 +552,43 @@ function NoteFormModal({
     setForm((f) => ({ ...f, tags: f.tags?.filter((t) => t !== tag) }));
   };
 
-  const handleSubmit = () => {
-    if (!form.title?.trim()) return;
+  const handleSubmit = async () => {
+    if (!form.title?.trim()) {
+      toast.error("Note title is required");
+      return;
+    }
+
     setIsSaving(true);
 
-    const saved: Note = {
-      _id: note?._id || Date.now().toString(),
-      id: note?.id || Date.now().toString(),
-      title: form.title!,
-      content: form.content || "",
-      category: form.category || "",
-      tags: form.tags || [],
-      color: form.color || "#FFFFFF",
-      reminderDate: form.reminderDate,
-      isPinned: note?.isPinned || false,
-      isArchived: note?.isArchived || false,
-      createdAt: note?.createdAt || new Date().toISOString().split("T")[0],
-    };
+    try {
+      const saved: Note = {
+        _id: note?._id || "",
+        id: note?.id || "",
+        title: form.title.trim(),
+        content: form.content?.trim() || "",
+        category: form.category || "",
+        tags: form.tags || [],
+        color: form.color || "#FFFFFF",
+        reminderDate: form.reminderDate || "",
+        isPinned: form.isPinned || false,
+        isArchived: form.isArchived || false,
+        createdAt: note?.createdAt || new Date().toISOString().split("T")[0],
+        updatedAt: new Date().toISOString().split("T")[0],
+      };
 
-    setTimeout(() => {
-      onSave(saved);
+      await onSave(saved);
+    } catch (error) {
+      console.error("❌ Submit error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save note",
+      );
+    } finally {
       setIsSaving(false);
-      onClose();
-    }, 600);
+    }
   };
+
+  const isValid = form.title?.trim().length > 0;
+  const saving = isLoading || isSaving;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
@@ -549,6 +614,7 @@ function NoteFormModal({
                 <button
                   key={color}
                   onClick={() => setForm({ ...form, color })}
+                  disabled={saving}
                   className={cn(
                     "w-8 h-8 rounded-full transition-all border-2",
                     form.color === color
@@ -575,6 +641,7 @@ function NoteFormModal({
               placeholder="Note title..."
               className="text-sm h-10"
               autoFocus
+              disabled={saving}
             />
           </div>
 
@@ -587,6 +654,7 @@ function NoteFormModal({
               placeholder="Write your note here..."
               className="text-sm resize-none min-h-[120px]"
               rows={4}
+              disabled={saving}
             />
           </div>
 
@@ -597,6 +665,7 @@ function NoteFormModal({
               <Select
                 value={form.category || ""}
                 onValueChange={(v) => setForm({ ...form, category: v })}
+                disabled={saving}
               >
                 <SelectTrigger className="text-sm h-10">
                   <SelectValue placeholder="Select category" />
@@ -628,6 +697,7 @@ function NoteFormModal({
                       "w-full justify-start text-left font-normal h-10",
                       !form.reminderDate && "text-muted-foreground",
                     )}
+                    disabled={saving}
                   >
                     <Calendar className="mr-2 h-3.5 w-3.5" />
                     {form.reminderDate ? (
@@ -675,12 +745,13 @@ function NoteFormModal({
                   <Badge
                     key={tag}
                     variant="secondary"
-                    className="gap-1 text-[11px] bg-violet-50 text-violet-600 border-violet-200"
+                    className="gap-1 text-[11px] bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950/40 dark:text-violet-400"
                   >
                     #{tag}
                     <button
                       onClick={() => removeTag(tag)}
                       className="hover:text-violet-900 transition-colors"
+                      disabled={saving}
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
@@ -694,23 +765,24 @@ function NoteFormModal({
               onKeyDown={handleTagKeyDown}
               placeholder="Type tag and press Enter..."
               className="text-sm h-10"
+              disabled={saving}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!form.title?.trim() || isSaving}
+            disabled={!isValid || saving}
             className="bg-violet-600 hover:bg-violet-700 text-white"
           >
-            {isSaving ? (
+            {saving ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
+                {isEdit ? "Saving..." : "Creating..."}
               </>
             ) : isEdit ? (
               "Update Note"
@@ -737,9 +809,11 @@ export default function NotesPage() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterArchive, setFilterArchive] = useState(false);
+  const [filterPinned, setFilterPinned] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Delete Modal States
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -758,18 +832,24 @@ export default function NotesPage() {
       if (search) params.append("search", search);
       if (filterCategory !== "all") params.append("category", filterCategory);
       if (filterArchive) params.append("archived", "true");
+      if (filterPinned) params.append("pinned", "true");
 
-      const res = await fetch(`/api/notes?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch notes");
+      const res = await fetch(`/api/notes?${params.toString()}`);
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch notes");
+      }
 
       const data = await res.json();
-      setNotes(data);
+      setNotes(data.data || data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load notes");
+      toast.error("Failed to load notes");
     } finally {
       setLoading(false);
     }
-  }, [user?.id, search, filterCategory, filterArchive]);
+  }, [user?.id, search, filterCategory, filterArchive, filterPinned]);
 
   useEffect(() => {
     if (isLoaded && user?.id) {
@@ -807,24 +887,31 @@ export default function NotesPage() {
         method: "DELETE",
       });
 
-      if (!res.ok) throw new Error("Failed to delete note");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete note");
+      }
 
       setNotes((prev) => prev.filter((n) => (n._id || n.id) !== id));
       setDeleteModalOpen(false);
       setNoteToDelete(null);
+      toast.success("Note deleted successfully!");
     } catch (err) {
       console.error("❌ Delete error:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete note");
+      toast.error(err instanceof Error ? err.message : "Failed to delete note");
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleSave = async (saved: Note) => {
+    setIsSaving(true);
+
     try {
       let res;
+      const isEdit = !!saved._id;
 
-      if (editingNote) {
+      if (isEdit) {
         res = await fetch(`/api/notes/${saved._id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -839,22 +926,30 @@ export default function NotesPage() {
       }
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to save note");
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to save note");
       }
 
       const data = await res.json();
+      const savedNote = data.data || data;
 
-      if (editingNote) {
-        setNotes((prev) => prev.map((n) => (n._id === saved._id ? data : n)));
+      if (isEdit) {
+        setNotes((prev) =>
+          prev.map((n) => (n._id === saved._id ? savedNote : n)),
+        );
+        toast.success("Note updated successfully!");
       } else {
-        setNotes((prev) => [data, ...prev]);
+        setNotes((prev) => [savedNote, ...prev]);
+        toast.success("Note created successfully!");
       }
 
+      setModalOpen(false);
       setEditingNote(null);
     } catch (err) {
       console.error("❌ Save error:", err);
-      alert(err instanceof Error ? err.message : "Failed to save note");
+      toast.error(err instanceof Error ? err.message : "Failed to save note");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -866,12 +961,21 @@ export default function NotesPage() {
         body: JSON.stringify({ action: "toggle-pin" }),
       });
 
-      if (!res.ok) throw new Error("Failed to toggle pin");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to toggle pin");
+      }
 
       const data = await res.json();
-      setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
+      const updatedNote = data.data || data;
+
+      setNotes((prev) => prev.map((n) => (n._id === id ? updatedNote : n)));
+      toast.success(
+        updatedNote.isPinned ? "📌 Note pinned!" : "📌 Note unpinned",
+      );
     } catch (err) {
       console.error("❌ Toggle pin error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to toggle pin");
     }
   };
 
@@ -883,67 +987,92 @@ export default function NotesPage() {
         body: JSON.stringify({ action: "toggle-archive" }),
       });
 
-      if (!res.ok) throw new Error("Failed to toggle archive");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to toggle archive");
+      }
 
       const data = await res.json();
-      setNotes((prev) => prev.map((n) => (n._id === id ? data : n)));
+      const updatedNote = data.data || data;
+
+      setNotes((prev) => prev.map((n) => (n._id === id ? updatedNote : n)));
+      toast.success(
+        updatedNote.isArchived ? "📦 Note archived!" : "📂 Note unarchived",
+      );
     } catch (err) {
       console.error("❌ Toggle archive error:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to toggle archive",
+      );
     }
   };
 
   // ── Derived ──
-  const filtered = notes.filter((n) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      !q ||
-      n.title.toLowerCase().includes(q) ||
-      n.content.toLowerCase().includes(q) ||
-      n.tags?.some((tag) => tag.toLowerCase().includes(q));
+  const filtered = useMemo(() => {
+    return notes.filter((n) => {
+      const q = search.toLowerCase();
+      const matchesSearch =
+        !q ||
+        n.title.toLowerCase().includes(q) ||
+        n.content.toLowerCase().includes(q) ||
+        n.tags?.some((tag) => tag.toLowerCase().includes(q));
 
-    const matchesCategory =
-      filterCategory === "all" || n.category === filterCategory;
+      const matchesCategory =
+        filterCategory === "all" || n.category === filterCategory;
 
-    const matchesArchive = filterArchive ? n.isArchived : !n.isArchived;
+      const matchesArchive = filterArchive ? n.isArchived : !n.isArchived;
+      const matchesPinned = filterPinned ? n.isPinned : true;
 
-    return matchesSearch && matchesCategory && matchesArchive;
-  });
+      return (
+        matchesSearch && matchesCategory && matchesArchive && matchesPinned
+      );
+    });
+  }, [notes, search, filterCategory, filterArchive, filterPinned]);
 
-  // Sort: Pinned first, then by date
-  const sorted = [...filtered].sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [filtered]);
 
-  const counts = {
-    all: notes.length,
-    pinned: notes.filter((n) => n.isPinned).length,
-    archived: notes.filter((n) => n.isArchived).length,
-    active: notes.filter((n) => !n.isArchived).length,
-  };
+  const counts = useMemo(
+    () => ({
+      all: notes.length,
+      pinned: notes.filter((n) => n.isPinned && !n.isArchived).length,
+      archived: notes.filter((n) => n.isArchived).length,
+      active: notes.filter((n) => !n.isArchived).length,
+    }),
+    [notes],
+  );
 
-  // Get category counts
-  const categoryCounts = notes.reduce((acc: Record<string, number>, note) => {
-    if (note.category && !note.isArchived) {
-      acc[note.category] = (acc[note.category] || 0) + 1;
-    }
-    return acc;
-  }, {});
+  const categoryCounts = useMemo(() => {
+    return notes.reduce((acc: Record<string, number>, note) => {
+      if (note.category && !note.isArchived) {
+        acc[note.category] = (acc[note.category] || 0) + 1;
+      }
+      return acc;
+    }, {});
+  }, [notes]);
 
-  const hasFilters = filterCategory !== "all" || filterArchive || search !== "";
+  const hasFilters =
+    filterCategory !== "all" || filterArchive || filterPinned || search !== "";
 
   const clearFilters = () => {
     setSearch("");
     setFilterCategory("all");
     setFilterArchive(false);
+    setFilterPinned(false);
+    setShowFilters(false);
   };
 
   // ── Loading ──
   if (!isLoaded || loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        <p className="text-sm text-muted-foreground">Loading notes...</p>
       </div>
     );
   }
@@ -954,12 +1083,20 @@ export default function NotesPage() {
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <AlertCircle className="w-12 h-12 text-destructive" />
         <p className="text-sm text-muted-foreground">{error}</p>
-        <Button onClick={fetchNotes} variant="outline" size="sm">
+        <Button
+          onClick={fetchNotes}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
           Try Again
         </Button>
       </div>
     );
   }
+
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <TooltipProvider>
@@ -970,6 +1107,9 @@ export default function NotesPage() {
             <h1 className="text-lg font-semibold flex items-center gap-2">
               <StickyNote className="w-5 h-5 text-violet-500" />
               Notes
+              <Badge variant="outline" className="ml-2 text-[10px] font-normal">
+                {counts.active} active
+              </Badge>
             </h1>
             <p className="text-xs text-muted-foreground">
               {counts.pinned} pinned · {counts.active} active ·{" "}
@@ -1036,7 +1176,7 @@ export default function NotesPage() {
                 filterCategory === "all" ? "bg-white/20" : "bg-background",
               )}
             >
-              {counts.all}
+              {counts.active}
             </span>
           </button>
           {CATEGORIES.map((cat) => {
@@ -1114,6 +1254,18 @@ export default function NotesPage() {
           >
             <Archive className="w-3.5 h-3.5" />
             {filterArchive ? "Archived" : "Archive"}
+          </Button>
+          <Button
+            variant={filterPinned ? "default" : "outline"}
+            size="sm"
+            className={cn(
+              "h-8 gap-1.5 text-xs",
+              filterPinned && "bg-amber-500 hover:bg-amber-600 text-white",
+            )}
+            onClick={() => setFilterPinned(!filterPinned)}
+          >
+            <Pin className="w-3.5 h-3.5" />
+            Pinned
           </Button>
         </div>
 
@@ -1198,7 +1350,7 @@ export default function NotesPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-2 ">
+              <div className="space-y-2">
                 {sorted.map((note) => (
                   <NoteCard
                     key={note._id || note.id}
@@ -1228,6 +1380,7 @@ export default function NotesPage() {
         }}
         onSave={handleSave}
         note={editingNote}
+        isLoading={isSaving}
       />
 
       {/* Delete Modal */}
