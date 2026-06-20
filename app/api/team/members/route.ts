@@ -8,7 +8,8 @@ import {
   removeMember,
 } from "@/lib/services/team-service";
 
-// GET - Get organization members
+// ─── GET: Get organization members ──────────────────────────────────────
+
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -41,7 +42,8 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST - Invite member
+// ─── POST: Invite member ──────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -74,7 +76,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH - Update member role
+// ─── PATCH: Update member role ───────────────────────────────────────────
+
 export async function PATCH(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -83,12 +86,16 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json();
-    const result = await updateMemberRole({
-      organizationId: body.organizationId,
-      userId: body.userId,
-      role: body.role,
-    });
+    const { organizationId, userId: memberId, role } = body;
 
+    if (!organizationId || !memberId || !role) {
+      return NextResponse.json(
+        { error: "Organization ID, Member ID, and Role are required" },
+        { status: 400 },
+      );
+    }
+
+    const result = await updateMemberRole(organizationId, memberId, role);
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -103,7 +110,8 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// DELETE - Remove member
+// ─── DELETE: Remove member ───────────────────────────────────────────────
+
 export async function DELETE(req: NextRequest) {
   try {
     const { userId } = await auth();

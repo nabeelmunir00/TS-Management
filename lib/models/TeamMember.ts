@@ -6,11 +6,13 @@ export type MemberStatus = "active" | "pending" | "invited" | "removed";
 
 export interface ITeamMember extends Document {
   organizationId: mongoose.Types.ObjectId;
-  userId: string; // Clerk user ID
+  userId: string;
   email: string;
+  name?: string;
+  avatar?: string;
   role: MemberRole;
   status: MemberStatus;
-  invitedBy: string; // Clerk user ID
+  invitedBy: string;
   invitedAt: Date;
   joinedAt?: Date;
   lastActiveAt?: Date;
@@ -36,6 +38,14 @@ const TeamMemberSchema = new Schema<ITeamMember>(
       required: true,
       trim: true,
       lowercase: true,
+      index: true,
+    },
+    name: {
+      type: String,
+      trim: true,
+    },
+    avatar: {
+      type: String,
     },
     role: {
       type: String,
@@ -47,12 +57,24 @@ const TeamMemberSchema = new Schema<ITeamMember>(
       enum: ["active", "pending", "invited", "removed"],
       default: "invited",
     },
-    invitedBy: { type: String, required: true },
-    invitedAt: { type: Date, default: Date.now },
-    joinedAt: { type: Date },
-    lastActiveAt: { type: Date },
+    invitedBy: {
+      type: String,
+      required: true,
+    },
+    invitedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    joinedAt: {
+      type: Date,
+    },
+    lastActiveAt: {
+      type: Date,
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  },
 );
 
 // Indexes

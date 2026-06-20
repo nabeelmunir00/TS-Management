@@ -21,13 +21,14 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -138,7 +139,6 @@ const STATUS_ICONS = {
 function TeamSkeleton() {
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <Skeleton className="h-8 w-48 mb-2" />
@@ -147,7 +147,6 @@ function TeamSkeleton() {
         <Skeleton className="h-10 w-36" />
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[...Array(4)].map((_, i) => (
           <Card key={i}>
@@ -162,13 +161,11 @@ function TeamSkeleton() {
         ))}
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-4">
         <Skeleton className="h-10 flex-1" />
         <Skeleton className="h-10 w-24" />
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           <div className="space-y-2 p-4">
@@ -204,6 +201,11 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  // Create Organization Dialog
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [orgName, setOrgName] = useState("");
+  const [creatingOrg, setCreatingOrg] = useState(false);
+
   // Invite Dialog
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -237,14 +239,15 @@ export default function TeamPage() {
       if (data.success) {
         setOrganizations(data.data);
         setLoading(() => false);
-        if (data.data.length > 0) {
-          setCurrentOrg(data.data[0].organizationId);
+        if (data.data.length > 0 && !currentOrg) {
+          setCurrentOrg(data.data[0]._id);
         }
       }
     } catch (error) {
       console.error("❌ Failed to fetch organizations:", error);
+      toast.error("Failed to load organizations");
     }
-  }, [user?.id]);
+  }, [user?.id, currentOrg]);
 
   // ── Fetch Members ──
   const fetchMembers = useCallback(async () => {
@@ -294,6 +297,50 @@ export default function TeamPage() {
   };
 
   // ── Handlers ──
+
+  // Create Organization
+  const handleCreateOrganization = async () => {
+    if (!orgName.trim()) {
+      toast.error("Organization name is required");
+      return;
+    }
+
+    setCreatingOrg(true);
+
+    try {
+      const res = await fetch("/api/team/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: orgName.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create organization");
+      }
+
+      toast.success(`Organization "${orgName}" created successfully!`);
+      setCreateOrgOpen(false);
+      setOrgName("");
+      await fetchOrganizations();
+
+      // Set the new organization as current
+      if (data.data?._id) {
+        setCurrentOrg(data.data._id);
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to create organization",
+      );
+    } finally {
+      setCreatingOrg(false);
+    }
+  };
+
+  // Invite Member
   const handleInvite = async () => {
     if (!inviteEmail.trim()) {
       toast.error("Email is required");
@@ -331,6 +378,7 @@ export default function TeamPage() {
     }
   };
 
+  // Remove Member
   const handleRemoveMember = async () => {
     if (!memberToRemove) return;
 
@@ -361,6 +409,7 @@ export default function TeamPage() {
     }
   };
 
+  // Update Role
   const handleUpdateRole = async () => {
     if (!memberToUpdate) return;
 
@@ -410,15 +459,67 @@ export default function TeamPage() {
   if (organizations.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <Users className="w-16 h-16 text-muted-foreground/30" />
+        <Building2 className="w-16 h-16 text-muted-foreground/30" />
         <h3 className="text-lg font-medium">No Organization</h3>
-        <p className="text-sm text-muted-foreground">
-          Create or join an organization to manage your team.
+        <p className="text-sm text-muted-foreground text-center max-w-sm">
+          Create an organization to start managing your team and projects.
         </p>
-        <Button className="gap-2 ">
+        <Button
+          className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+          onClick={() => setCreateOrgOpen(true)}
+        >
           <Plus className="w-4 h-4" />
           Create Organization
         </Button>
+
+        {/* Create Organization Dialog */}
+        <Dialog open={createOrgOpen} onOpenChange={setCreateOrgOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-violet-500" />
+                Create Organization
+              </DialogTitle>
+              <DialogDescription>
+                Create a new organization to manage your team and projects.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                <Input
+                  placeholder="e.g. Acme Corp"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  This will be used to generate a unique URL for your
+                  organization.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOrgOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateOrganization}
+                disabled={creatingOrg || !orgName.trim()}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                {creatingOrg ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Organization"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -459,6 +560,27 @@ export default function TeamPage() {
             </Button>
           </div>
         </div>
+
+        {/* ── Organization Selector ── */}
+        {organizations.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">
+              Organization:
+            </Label>
+            <Select value={currentOrg} onValueChange={setCurrentOrg}>
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((org) => (
+                  <SelectItem key={org._id} value={org._id}>
+                    {org.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -684,6 +806,55 @@ export default function TeamPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* ── Create Organization Dialog ── */}
+        <Dialog open={createOrgOpen} onOpenChange={setCreateOrgOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-violet-500" />
+                Create Organization
+              </DialogTitle>
+              <DialogDescription>
+                Create a new organization to manage your team and projects.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                <Input
+                  placeholder="e.g. Acme Corp"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  This will be used to generate a unique URL for your
+                  organization.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOrgOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateOrganization}
+                disabled={creatingOrg || !orgName.trim()}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                {creatingOrg ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Organization"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* ── Invite Dialog ── */}
         <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>

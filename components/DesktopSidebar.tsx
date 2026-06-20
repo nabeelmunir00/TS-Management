@@ -17,6 +17,7 @@ import {
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
+  User2,
 } from "lucide-react";
 import { useUser, SignOutButton } from "@clerk/nextjs";
 
@@ -87,6 +88,13 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Notes",
         href: "/dashboard/notes",
         icon: FileText,
+        badge: 0,
+        badgeVariant: "secondary",
+      },
+      {
+        label: "Teams",
+        href: "/dashboard/team",
+        icon: User2,
         badge: 0,
         badgeVariant: "secondary",
       },

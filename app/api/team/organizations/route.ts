@@ -1,13 +1,14 @@
 // app/api/team/organizations/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import {
   createOrganization,
   getUserOrganizations,
 } from "@/lib/services/team-service";
 import { RateLimiter } from "@/lib/rate-limiter";
 
-// GET - Get user's organizations
+// ─── GET: Get user's organizations ──────────────────────────────────────
+
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -30,27 +31,37 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST - Create organization
+// ─── POST: Create organization ──────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const client = await clerkClient();
+    const user = await client.users.getUser(userId);
 
+    const email = user.emailAddresses[0].emailAddress;
+
+    // Rate limiting
     const rateLimitResult = await RateLimiter.check(`org:${userId}`, {
-      maxRequests: 10,
+      maxRequests: 5,
       windowMs: 60 * 1000,
     });
 
     if (!rateLimitResult.success) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 },
+      );
     }
 
     const body = await req.json();
     const result = await createOrganization({
       userId,
       name: body.name,
+      email: email,
     });
 
     if (!result.success) {
