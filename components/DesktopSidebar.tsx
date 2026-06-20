@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -23,6 +23,7 @@ import { useUser, SignOutButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +57,12 @@ interface NavSection {
   items: NavItem[];
 }
 
+interface DashboardCounts {
+  tasks: number;
+  projects: number;
+  notes: number;
+}
+
 // ─── Nav Config ──────────────────────────────────────────────────────────────
 
 const NAV_SECTIONS: NavSection[] = [
@@ -67,20 +74,20 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Tasks",
         href: "/dashboard/tasks",
         icon: CheckSquare,
-        badge: 12,
+        badge: 0,
       },
       {
         label: "Projects",
         href: "/dashboard/projects",
         icon: FolderOpen,
-        badge: 4,
+        badge: 0,
         badgeVariant: "secondary",
       },
       {
         label: "Notes",
         href: "/dashboard/notes",
         icon: FileText,
-        badge: 7,
+        badge: 0,
         badgeVariant: "secondary",
       },
     ],
@@ -110,7 +117,7 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Notifications",
         href: "/dashboard/notifications",
         icon: Bell,
-        badge: 3,
+        badge: 0,
       },
       { label: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
@@ -167,14 +174,37 @@ function getUserRole(user: any) {
 
 // ─── Components ─────────────────────────────────────────────────────────────
 
+function NavBadgeSkeleton() {
+  return <Skeleton className="ml-auto h-4 w-8 rounded-full" />;
+}
+
 function NavBadge({
   badge,
   variant,
+  loading,
 }: {
   badge: NavItem["badge"];
   variant: NavItem["badgeVariant"];
+  loading?: boolean;
 }) {
-  if (!badge) return null;
+  // Show skeleton while loading
+  if (loading && (badge === 0 || badge === undefined)) {
+    return <NavBadgeSkeleton />;
+  }
+
+  if (!badge && badge !== 0) return null;
+
+  // Show 0 as "0" not empty
+  if (badge === 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="ml-auto text-[10px] h-4 px-1.5 font-medium text-muted-foreground"
+      >
+        0
+      </Badge>
+    );
+  }
 
   if (variant === "new") {
     return (
@@ -206,10 +236,12 @@ function DesktopNavLink({
   item,
   collapsed,
   active,
+  loading,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  loading?: boolean;
 }) {
   const Icon = item.icon;
 
@@ -235,7 +267,11 @@ function DesktopNavLink({
       {!collapsed && (
         <>
           <span className="flex-1 truncate">{item.label}</span>
-          <NavBadge badge={item.badge} variant={item.badgeVariant} />
+          <NavBadge
+            badge={item.badge}
+            variant={item.badgeVariant}
+            loading={loading}
+          />
         </>
       )}
     </Link>
@@ -247,8 +283,12 @@ function DesktopNavLink({
         <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
         <TooltipContent side="right" className="flex items-center gap-2">
           {item.label}
-          {item.badge && (
-            <NavBadge badge={item.badge} variant={item.badgeVariant} />
+          {item.badge !== undefined && (
+            <NavBadge
+              badge={item.badge}
+              variant={item.badgeVariant}
+              loading={loading}
+            />
           )}
         </TooltipContent>
       </Tooltip>
@@ -262,13 +302,70 @@ function DesktopNavLink({
 
 export default function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [counts, setCounts] = useState<DashboardCounts | null>(null);
+  const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const { user, isLoaded, isSignedIn } = useUser();
+
+  // ─── Fetch Real Data ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    async function fetchCounts() {
+      if (!isSignedIn || !user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) throw new Error("Failed to fetch dashboard data");
+        const result = await res.json();
+
+        if (result.success && result.data) {
+          const data = result.data;
+          setCounts({
+            tasks: data.tasks?.total || 0,
+            projects: data.projects?.total || 0,
+            notes: data.notes?.total || 0,
+          });
+        }
+      } catch (error) {
+        console.error("❌ Failed to fetch sidebar counts:", error);
+        // Set default values on error
+        setCounts({ tasks: 0, projects: 0, notes: 0 });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchCounts();
+  }, [isSignedIn, user?.id]);
+
+  // ─── Update Nav Items with Real Data ──────────────────────────────────────
+
+  const navItemsWithBadges = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      if (item.label === "Tasks" && counts) {
+        return { ...item, badge: counts.tasks };
+      }
+      if (item.label === "Projects" && counts) {
+        return { ...item, badge: counts.projects };
+      }
+      if (item.label === "Notes" && counts) {
+        return { ...item, badge: counts.notes };
+      }
+      // Keep static badges for other items (like "New", notifications)
+      return item;
+    }),
+  }));
 
   const userInitials = isLoaded && isSignedIn ? getUserInitials(user) : "?";
   const userDisplayName =
     isLoaded && isSignedIn ? getUserDisplayName(user) : "Guest";
   const userRole = isLoaded && isSignedIn ? getUserRole(user) : "";
+
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <TooltipProvider>
@@ -376,7 +473,7 @@ export default function DesktopSidebar() {
         {/* ── Nav ── */}
         <ScrollArea className="flex-1 py-2">
           <div className={cn("space-y-4", collapsed ? "px-2" : "px-3")}>
-            {NAV_SECTIONS.map((section) => (
+            {navItemsWithBadges.map((section) => (
               <div key={section.title} className="space-y-0.5">
                 {!collapsed && (
                   <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-widest px-2.5 mb-1">
@@ -390,6 +487,7 @@ export default function DesktopSidebar() {
                     item={item}
                     collapsed={collapsed}
                     active={pathname === item.href}
+                    loading={loading}
                   />
                 ))}
               </div>
