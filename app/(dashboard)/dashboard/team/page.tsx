@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
 import {
   Users,
@@ -22,6 +22,9 @@ import {
   XCircle,
   Clock,
   Building2,
+  ChevronDown,
+  Settings,
+  LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -144,7 +147,10 @@ function TeamSkeleton() {
           <Skeleton className="h-8 w-48 mb-2" />
           <Skeleton className="h-4 w-64" />
         </div>
-        <Skeleton className="h-10 w-36" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-36" />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -197,6 +203,9 @@ export default function TeamPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [currentOrg, setCurrentOrg] = useState<string>("");
+  const [currentUserRole, setCurrentUserRole] = useState<
+    "owner" | "admin" | "member" | "viewer" | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -227,6 +236,12 @@ export default function TeamPage() {
   );
   const [updating, setUpdating] = useState(false);
 
+  // ── Permissions ──
+  const canInvite = currentUserRole === "owner" || currentUserRole === "admin";
+  const canChangeRoles =
+    currentUserRole === "owner" || currentUserRole === "admin";
+  const canRemove = currentUserRole === "owner" || currentUserRole === "admin";
+
   // ── Fetch Organizations ──
   const fetchOrganizations = useCallback(async () => {
     if (!user?.id) return;
@@ -238,7 +253,6 @@ export default function TeamPage() {
 
       if (data.success) {
         setOrganizations(data.data);
-        setLoading(() => false);
         if (data.data.length > 0 && !currentOrg) {
           setCurrentOrg(data.data[0]._id);
         }
@@ -263,6 +277,7 @@ export default function TeamPage() {
 
       if (data.success) {
         setMembers(data.data);
+        setCurrentUserRole(data.currentUserRole || null);
       }
     } catch (error) {
       setError(
@@ -298,6 +313,11 @@ export default function TeamPage() {
 
   // ── Handlers ──
 
+  // Organization Switch
+  const handleSwitchOrganization = (orgId: string) => {
+    setCurrentOrg(orgId);
+  };
+
   // Create Organization
   const handleCreateOrganization = async () => {
     if (!orgName.trim()) {
@@ -325,7 +345,6 @@ export default function TeamPage() {
       setOrgName("");
       await fetchOrganizations();
 
-      // Set the new organization as current
       if (data.data?._id) {
         setCurrentOrg(data.data._id);
       }
@@ -444,11 +463,13 @@ export default function TeamPage() {
   };
 
   // ── Filter Members ──
-  const filteredMembers = members.filter(
-    (m) =>
-      m.email.toLowerCase().includes(search.toLowerCase()) ||
-      m.name?.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filteredMembers = useMemo(() => {
+    return members.filter(
+      (m) =>
+        m.email.toLowerCase().includes(search.toLowerCase()) ||
+        m.name?.toLowerCase().includes(search.toLowerCase()),
+    );
+  }, [members, search]);
 
   // ── Loading ──
   if (!isLoaded || loading) {
@@ -458,7 +479,7 @@ export default function TeamPage() {
   // ── No Organization ──
   if (organizations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex flex-col items-center justify-center min-h-[80vh] gap-4">
         <Building2 className="w-16 h-16 text-muted-foreground/30" />
         <h3 className="text-lg font-medium">No Organization</h3>
         <p className="text-sm text-muted-foreground text-center max-w-sm">
@@ -550,37 +571,93 @@ export default function TeamPage() {
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              onClick={() => setInviteOpen(true)}
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-            >
-              <UserPlus className="w-4 h-4" />
-              Invite Member
-            </Button>
+            {canInvite && (
+              <Button
+                size="sm"
+                onClick={() => setInviteOpen(true)}
+                className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                <UserPlus className="w-4 h-4" />
+                Invite Member
+              </Button>
+            )}
           </div>
         </div>
 
         {/* ── Organization Selector ── */}
-        {organizations.length > 1 && (
+        <div className="flex items-center justify-between gap-4 p-3 bg-muted/30 rounded-lg border">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground">
-              Organization:
-            </Label>
-            <Select value={currentOrg} onValueChange={setCurrentOrg}>
-              <SelectTrigger className="w-[200px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {organizations.map((org) => (
-                  <SelectItem key={org._id} value={org._id}>
-                    {org.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Building2 className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Organization:</span>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            {organizations.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 min-w-[150px] justify-between"
+                  >
+                    <span className="truncate">
+                      {organizations.find((o) => o._id === currentOrg)?.name ||
+                        "Select Organization"}
+                    </span>
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="text-xs">
+                    Switch Organization
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {organizations.map((org) => (
+                    <DropdownMenuItem
+                      key={org._id}
+                      className={cn(
+                        "cursor-pointer",
+                        currentOrg === org._id && "bg-muted",
+                      )}
+                      onClick={() => handleSwitchOrganization(org._id)}
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        <Building2 className="w-4 h-4" />
+                        <span className="flex-1">{org.name}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {ROLE_LABELS[org.role as keyof typeof ROLE_LABELS]}
+                        </Badge>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-violet-500" />
+                <span className="text-sm font-medium">
+                  {organizations.find((o) => o._id === currentOrg)?.name}
+                </span>
+                <Badge variant="outline" className="text-[10px]">
+                  {
+                    ROLE_LABELS[
+                      organizations.find((o) => o._id === currentOrg)
+                        ?.role as keyof typeof ROLE_LABELS
+                    ]
+                  }
+                </Badge>
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-xs"
+              onClick={() => setCreateOrgOpen(true)}
+            >
+              <Plus className="w-3 h-3" />
+              New
+            </Button>
+          </div>
+        </div>
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -653,7 +730,7 @@ export default function TeamPage() {
                     ? "Try adjusting your search"
                     : "Invite your first team member"}
                 </p>
-                {!search && (
+                {!search && canInvite && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -683,6 +760,11 @@ export default function TeamPage() {
                       const StatusIcon =
                         STATUS_ICONS[member.status] || CheckCircle;
 
+                      const isCurrentUser = member.userId === user?.id;
+                      const isOwner = member.role === "owner";
+                      const canManage =
+                        canChangeRoles && !isOwner && !isCurrentUser;
+
                       return (
                         <TableRow key={member._id}>
                           <TableCell>
@@ -700,8 +782,16 @@ export default function TeamPage() {
                                 )}
                               </Avatar>
                               <div>
-                                <p className="text-sm font-medium">
+                                <p className="text-sm font-medium flex items-center gap-1">
                                   {member.name || member.email.split("@")[0]}
+                                  {isCurrentUser && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px]"
+                                    >
+                                      You
+                                    </Badge>
+                                  )}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {member.email}
@@ -740,7 +830,7 @@ export default function TeamPage() {
                             </span>
                           </TableCell>
                           <TableCell className="text-right">
-                            {member.role !== "owner" && (
+                            {canManage && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
@@ -783,7 +873,7 @@ export default function TeamPage() {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             )}
-                            {member.role === "owner" && (
+                            {isOwner && (
                               <Tooltip>
                                 <TooltipTrigger>
                                   <Badge variant="outline" className="text-xs">
@@ -795,6 +885,12 @@ export default function TeamPage() {
                                   <p>Organization owner</p>
                                 </TooltipContent>
                               </Tooltip>
+                            )}
+                            {isCurrentUser && !isOwner && (
+                              <Badge variant="outline" className="text-xs">
+                                <UserCog className="w-3 h-3 mr-1" />
+                                You
+                              </Badge>
                             )}
                           </TableCell>
                         </TableRow>

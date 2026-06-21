@@ -27,12 +27,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const result = await getOrganizationMembers(organizationId);
+    // ✅ Pass currentUserId for permissions
+    const result = await getOrganizationMembers(organizationId, userId);
+
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: result.data });
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      currentUserRole: result.currentUserRole, // ✅ Send role to frontend
+    });
   } catch (error) {
     console.error("❌ GET /api/team/members error:", error);
     return NextResponse.json(
@@ -52,11 +58,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
+    const { organizationId, email, role } = body;
+
+    if (!organizationId || !email) {
+      return NextResponse.json(
+        { error: "Organization ID and email are required" },
+        { status: 400 },
+      );
+    }
+
     const result = await inviteMember({
-      organizationId: body.organizationId,
+      organizationId,
       invitedBy: userId,
-      email: body.email,
-      role: body.role,
+      email,
+      role: role || "member",
     });
 
     if (!result.success) {
@@ -95,7 +110,14 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const result = await updateMemberRole(organizationId, memberId, role);
+    // ✅ Pass currentUserId for permission check
+    const result = await updateMemberRole({
+      organizationId,
+      userId: memberId,
+      role,
+      currentUserId: userId,
+    });
+
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -130,7 +152,13 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const result = await removeMember(organizationId, memberId);
+    // ✅ Pass currentUserId for permission check
+    const result = await removeMember({
+      organizationId,
+      userId: memberId,
+      currentUserId: userId,
+    });
+
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }

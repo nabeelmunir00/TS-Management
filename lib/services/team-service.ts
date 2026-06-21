@@ -1,9 +1,13 @@
 // lib/services/team-service.ts
 import connectDB from "@/lib/db";
 import Organization from "@/lib/models/Organization";
-import TeamMember from "@/lib/models/TeamMember";
+import TeamMember, { MemberRole } from "@/lib/models/TeamMember";
 import Invitation from "@/lib/models/Invitation";
-import { Types } from "mongoose";
+import {
+  hasPermission,
+  canManageMember,
+  canChangeRole,
+} from "@/lib/permissions";
 import { v4 as uuidv4 } from "uuid";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -12,13 +16,6 @@ export interface CreateOrganizationInput {
   userId: string;
   name: string;
   email: string;
-}
-
-export interface GetUserOrganizationsResponse {
-  _id: string;
-  name: string;
-  slug: string;
-  role: string;
 }
 
 export interface InviteMemberInput {
@@ -32,6 +29,13 @@ export interface UpdateMemberInput {
   organizationId: string;
   userId: string;
   role: "admin" | "member" | "viewer";
+  currentUserId: string; // ✅ Added for permission check
+}
+
+export interface RemoveMemberInput {
+  organizationId: string;
+  userId: string;
+  currentUserId: string; // ✅ Added for permission check
 }
 
 export interface AcceptInvitationInput {
@@ -40,38 +44,57 @@ export interface AcceptInvitationInput {
   email: string;
 }
 
+// ─── Helper: Get User Role ─────────────────────────────────────────────────
+
+export async function getUserRole(organizationId: string, userId: string) {
+  const member = await TeamMember.findOne({
+    organizationId,
+    userId,
+    status: "active",
+  });
+
+  return member?.role || null;
+}
+
+// ─── Helper: Check Permission ──────────────────────────────────────────────
+
+export async function checkPermission(
+  organizationId: string,
+  userId: string,
+  permission: string,
+): Promise<boolean> {
+  const role = await getUserRole(organizationId, userId);
+  if (!role) return false;
+  return hasPermission(role, permission as any);
+}
+
 // ─── 1. Create Organization ──────────────────────────────────────────────
 
 export async function createOrganization(data: CreateOrganizationInput) {
   try {
     await connectDB();
 
-    // Validate
     if (!data.name || !data.name.trim()) {
       return { success: false, error: "Organization name is required" };
     }
 
-    // Generate slug
     const slug = data.name
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9]/g, "-")
       .replace(/-+/g, "-");
 
-    // Check if slug exists
     const existing = await Organization.findOne({ slug });
     if (existing) {
       return { success: false, error: "Organization name already taken" };
     }
 
-    // Create organization
     const organization = await Organization.create({
       name: data.name.trim(),
       slug,
       ownerId: data.userId,
     });
 
-    // Add owner as team member
     await TeamMember.create({
       organizationId: organization._id,
       userId: data.userId,
@@ -137,7 +160,10 @@ export async function getUserOrganizations(userId: string) {
 
 // ─── 3. Get Organization Members ──────────────────────────────────────────
 
-export async function getOrganizationMembers(organizationId: string) {
+export async function getOrganizationMembers(
+  organizationId: string,
+  currentUserId?: string, // ✅ Optional, for permissions
+) {
   try {
     await connectDB();
 
@@ -147,6 +173,13 @@ export async function getOrganizationMembers(organizationId: string) {
     })
       .sort({ role: 1, createdAt: 1 })
       .lean();
+
+    // ✅ Get current user's role
+    let currentUserRole: MemberRole | null = null;
+    if (currentUserId) {
+      const currentUser = members.find((m) => m.userId === currentUserId);
+      currentUserRole = currentUser?.role || null;
+    }
 
     return {
       success: true,
@@ -161,6 +194,7 @@ export async function getOrganizationMembers(organizationId: string) {
         joinedAt: m.joinedAt,
         lastActiveAt: m.lastActiveAt,
       })),
+      currentUserRole, // ✅ Send current user's role to frontend
     };
   } catch (error) {
     console.error("❌ Get members error:", error);
@@ -171,19 +205,31 @@ export async function getOrganizationMembers(organizationId: string) {
   }
 }
 
-// ─── 4. Invite Member (with Token) ─────────────────────────────────────────
+// ─── 4. Invite Member ──────────────────────────────────────────────────────
 
 export async function inviteMember(data: InviteMemberInput) {
   try {
     await connectDB();
 
-    // Check if organization exists
+    // ✅ Check if user has permission to invite
+    const hasInvitePermission = await checkPermission(
+      data.organizationId,
+      data.invitedBy,
+      "invite_members",
+    );
+
+    if (!hasInvitePermission) {
+      return {
+        success: false,
+        error: "You don't have permission to invite members",
+      };
+    }
+
     const org = await Organization.findById(data.organizationId);
     if (!org) {
       return { success: false, error: "Organization not found" };
     }
 
-    // Check if already a member
     const existing = await TeamMember.findOne({
       organizationId: data.organizationId,
       email: data.email,
@@ -193,7 +239,6 @@ export async function inviteMember(data: InviteMemberInput) {
       return { success: false, error: "User is already a member" };
     }
 
-    // Check for pending invitation
     const pendingInvite = await Invitation.findOne({
       organizationId: data.organizationId,
       email: data.email,
@@ -204,12 +249,10 @@ export async function inviteMember(data: InviteMemberInput) {
       return { success: false, error: "Invitation already sent" };
     }
 
-    // ✅ Generate unique token
     const token = uuidv4();
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // ✅ Create invitation record
     const invitation = await Invitation.create({
       organizationId: data.organizationId,
       email: data.email,
@@ -220,7 +263,6 @@ export async function inviteMember(data: InviteMemberInput) {
       status: "pending",
     });
 
-    // Create pending member entry
     await TeamMember.create({
       organizationId: data.organizationId,
       userId: `pending-${Date.now()}`,
@@ -231,11 +273,7 @@ export async function inviteMember(data: InviteMemberInput) {
       invitedAt: new Date(),
     });
 
-    // ✅ Generate invite link
     const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${token}`;
-
-    // TODO: Send email invitation
-    // await sendInvitationEmail(data.email, org.name, inviteLink);
 
     return {
       success: true,
@@ -257,33 +295,67 @@ export async function inviteMember(data: InviteMemberInput) {
   }
 }
 
-// ─── 5. Update Member Role ─────────────────────────────────────────────────
+// ─── 5. Update Member Role (With Permission Check) ─────────────────────────
 
 export async function updateMemberRole(data: UpdateMemberInput) {
   try {
     await connectDB();
 
-    const member = await TeamMember.findOne({
+    // ✅ Check if user has permission to change roles
+    const hasPermission = await checkPermission(
+      data.organizationId,
+      data.currentUserId,
+      "change_roles",
+    );
+
+    if (!hasPermission) {
+      return {
+        success: false,
+        error: "You don't have permission to change roles",
+      };
+    }
+
+    // ✅ Get current user's role
+    const currentUserRole = await getUserRole(
+      data.organizationId,
+      data.currentUserId,
+    );
+
+    // ✅ Get target member
+    const targetMember = await TeamMember.findOne({
       organizationId: data.organizationId,
       userId: data.userId,
     });
 
-    if (!member) {
+    if (!targetMember) {
       return { success: false, error: "Member not found" };
     }
 
-    if (member.role === "owner") {
+    // ✅ Cannot change owner
+    if (targetMember.role === "owner") {
       return { success: false, error: "Cannot change owner role" };
     }
 
-    member.role = data.role;
-    await member.save();
+    // ✅ Check if current user can change this target's role
+    const canChange = canChangeRole(
+      currentUserRole as any,
+      targetMember.role as any,
+    );
+    if (!canChange) {
+      return {
+        success: false,
+        error: "You don't have permission to change this member's role",
+      };
+    }
+
+    targetMember.role = data.role;
+    await targetMember.save();
 
     return {
       success: true,
       data: {
-        userId: member.userId,
-        role: member.role,
+        userId: targetMember.userId,
+        role: targetMember.role,
       },
     };
   } catch (error) {
@@ -295,15 +367,29 @@ export async function updateMemberRole(data: UpdateMemberInput) {
   }
 }
 
-// ─── 6. Remove Member ──────────────────────────────────────────────────────
+// ─── 6. Remove Member (With Permission Check) ──────────────────────────────
 
-export async function removeMember(organizationId: string, userId: string) {
+export async function removeMember(data: RemoveMemberInput) {
   try {
     await connectDB();
 
+    // ✅ Check if user has permission to remove members
+    const hasPermission = await checkPermission(
+      data.organizationId,
+      data.currentUserId,
+      "remove_members",
+    );
+
+    if (!hasPermission) {
+      return {
+        success: false,
+        error: "You don't have permission to remove members",
+      };
+    }
+
     const member = await TeamMember.findOne({
-      organizationId,
-      userId,
+      organizationId: data.organizationId,
+      userId: data.userId,
     });
 
     if (!member) {
@@ -312,6 +398,23 @@ export async function removeMember(organizationId: string, userId: string) {
 
     if (member.role === "owner") {
       return { success: false, error: "Cannot remove owner" };
+    }
+
+    // ✅ Check if current user can remove this target
+    const currentUserRole = await getUserRole(
+      data.organizationId,
+      data.currentUserId,
+    );
+    const canManage = canManageMember(
+      currentUserRole as any,
+      member.role as any,
+    );
+
+    if (!canManage) {
+      return {
+        success: false,
+        error: "You don't have permission to remove this member",
+      };
     }
 
     member.status = "removed";
@@ -333,7 +436,6 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
   try {
     await connectDB();
 
-    // ✅ 1. Find invitation by token
     const invitation = await Invitation.findOne({
       token: data.token,
       status: "pending",
@@ -345,9 +447,7 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
         error: "Invalid or expired invitation",
       };
     }
-    const orgName = invitation.organizationId.name;
 
-    // ✅ 2. Check if invitation has expired
     if (invitation.expiresAt < new Date()) {
       invitation.status = "expired";
       await invitation.save();
@@ -357,7 +457,6 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
       };
     }
 
-    // ✅ 3. Check if user is already a member
     const existingMember = await TeamMember.findOne({
       organizationId: invitation.organizationId,
       userId: data.userId,
@@ -370,7 +469,6 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
       };
     }
 
-    // ✅ 4. Check if email matches
     if (invitation.email.toLowerCase() !== data.email.toLowerCase()) {
       return {
         success: false,
@@ -378,20 +476,17 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
       };
     }
 
-    // ✅ 5. Update or create team member
     const member = await TeamMember.findOne({
       organizationId: invitation.organizationId,
       email: invitation.email,
     });
 
     if (member) {
-      // Update existing pending member
       member.userId = data.userId;
       member.status = "active";
       member.joinedAt = new Date();
       await member.save();
     } else {
-      // Create new member
       await TeamMember.create({
         organizationId: invitation.organizationId,
         userId: data.userId,
@@ -404,18 +499,16 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
       });
     }
 
-    // ✅ 6. Update invitation status
     invitation.status = "accepted";
     await invitation.save();
 
-    // ✅ 7. Get organization info
-    const organization = await Organization.findById(invitation.organizationId);
+    const organization = invitation.organizationId as any;
 
     return {
       success: true,
       data: {
-        organizationId: invitation.organizationId,
-        organizationName: organization?.name,
+        organizationId: organization._id.toString(),
+        organizationName: organization.name || "Organization",
         role: invitation.role,
       },
     };
@@ -456,13 +549,18 @@ export async function getInvitationDetails(token: string) {
       };
     }
 
+    const organization = invitation.organizationId as any;
+
     return {
       success: true,
       data: {
         email: invitation.email,
         role: invitation.role,
-        organizationName: invitation.organizationId?.name || "Organization",
+        organizationName: organization?.name || "Organization",
+        organizationId: organization?._id?.toString() || "",
         expiresAt: invitation.expiresAt,
+        invitedBy: invitation.invitedBy,
+        createdAt: invitation.createdAt,
       },
     };
   } catch (error) {
@@ -473,107 +571,6 @@ export async function getInvitationDetails(token: string) {
         error instanceof Error
           ? error.message
           : "Failed to get invitation details",
-    };
-  }
-}
-
-// ─── 9. Cancel Invitation ──────────────────────────────────────────────────
-
-export async function cancelInvitation(organizationId: string, email: string) {
-  try {
-    await connectDB();
-
-    // Find and update invitation
-    const invitation = await Invitation.findOne({
-      organizationId,
-      email,
-      status: "pending",
-    });
-
-    if (!invitation) {
-      return {
-        success: false,
-        error: "No pending invitation found",
-      };
-    }
-
-    invitation.status = "cancelled";
-    await invitation.save();
-
-    // Remove pending member entry
-    await TeamMember.findOneAndDelete({
-      organizationId,
-      email,
-      status: "invited",
-    });
-
-    return {
-      success: true,
-      data: {
-        email: invitation.email,
-        status: invitation.status,
-      },
-    };
-  } catch (error) {
-    console.error("❌ Cancel invitation error:", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to cancel invitation",
-    };
-  }
-}
-
-// ─── 10. Resend Invitation ──────────────────────────────────────────────────
-
-export async function resendInvitation(organizationId: string, email: string) {
-  try {
-    await connectDB();
-
-    // Find existing invitation
-    const invitation = await Invitation.findOne({
-      organizationId,
-      email,
-      status: "pending",
-    });
-
-    if (!invitation) {
-      return {
-        success: false,
-        error: "No pending invitation found",
-      };
-    }
-
-    // Update token and expiry
-    const newToken = uuidv4();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    invitation.token = newToken;
-    invitation.expiresAt = expiresAt;
-    await invitation.save();
-
-    // Generate new invite link
-    const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${newToken}`;
-
-    // TODO: Resend email invitation
-    // await sendInvitationEmail(email, organizationName, inviteLink);
-
-    return {
-      success: true,
-      data: {
-        email: invitation.email,
-        token: invitation.token,
-        inviteLink: inviteLink,
-        expiresAt: invitation.expiresAt,
-      },
-    };
-  } catch (error) {
-    console.error("❌ Resend invitation error:", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to resend invitation",
     };
   }
 }
