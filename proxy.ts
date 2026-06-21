@@ -4,6 +4,8 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/invite/(.*)", // ✅ Make invite route public
+  "/api/team/invitations/(.*)",
   "/api/webhooks(.*)",
   "/api/public(.*)",
 ]);

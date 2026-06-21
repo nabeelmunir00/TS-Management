@@ -1,0 +1,174 @@
+// app/api/team/members/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import {
+  getOrganizationMembers,
+  inviteMember,
+  updateMemberRole,
+  removeMember,
+} from "@/lib/services/team-service";
+
+// ─── GET: Get organization members ──────────────────────────────────────
+
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const organizationId = searchParams.get("organizationId");
+
+    if (!organizationId) {
+      return NextResponse.json(
+        { error: "Organization ID required" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ Pass currentUserId for permissions
+    const result = await getOrganizationMembers(organizationId, userId);
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      currentUserRole: result.currentUserRole, // ✅ Send role to frontend
+    });
+  } catch (error) {
+    console.error("❌ GET /api/team/members error:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch members" },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── POST: Invite member ──────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { organizationId, email, role } = body;
+
+    if (!organizationId || !email) {
+      return NextResponse.json(
+        { error: "Organization ID and email are required" },
+        { status: 400 },
+      );
+    }
+
+    const result = await inviteMember({
+      organizationId,
+      invitedBy: userId,
+      email,
+      role: role || "member",
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    return NextResponse.json(
+      { success: true, data: result.data },
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("❌ POST /api/team/members error:", error);
+    return NextResponse.json(
+      { error: "Failed to invite member" },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── PATCH: Update member role ───────────────────────────────────────────
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { organizationId, userId: memberId, role } = body;
+
+    if (!organizationId || !memberId || !role) {
+      return NextResponse.json(
+        { error: "Organization ID, Member ID, and Role are required" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ Pass currentUserId for permission check
+    const result = await updateMemberRole({
+      organizationId,
+      userId: memberId,
+      role,
+      currentUserId: userId,
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true, data: result.data });
+  } catch (error) {
+    console.error("❌ PATCH /api/team/members error:", error);
+    return NextResponse.json(
+      { error: "Failed to update member" },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── DELETE: Remove member ───────────────────────────────────────────────
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const organizationId = searchParams.get("organizationId");
+    const memberId = searchParams.get("memberId");
+
+    if (!organizationId || !memberId) {
+      return NextResponse.json(
+        { error: "Organization ID and Member ID required" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ Pass currentUserId for permission check
+    const result = await removeMember({
+      organizationId,
+      userId: memberId,
+      currentUserId: userId,
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("❌ DELETE /api/team/members error:", error);
+    return NextResponse.json(
+      { error: "Failed to remove member" },
+      { status: 500 },
+    );
+  }
+}

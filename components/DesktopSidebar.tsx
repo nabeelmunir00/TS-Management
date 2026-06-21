@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,14 +15,19 @@ import {
   Settings,
   Code2,
   ChevronDown,
+  ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
+  User2,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 import { useUser, SignOutButton } from "@clerk/nextjs";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +61,12 @@ interface NavSection {
   items: NavItem[];
 }
 
+interface DashboardCounts {
+  tasks: number;
+  projects: number;
+  notes: number;
+}
+
 // ─── Nav Config ──────────────────────────────────────────────────────────────
 
 const NAV_SECTIONS: NavSection[] = [
@@ -67,20 +78,20 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Tasks",
         href: "/dashboard/tasks",
         icon: CheckSquare,
-        badge: 12,
+        badge: 0,
       },
       {
         label: "Projects",
         href: "/dashboard/projects",
         icon: FolderOpen,
-        badge: 4,
+        badge: 0,
         badgeVariant: "secondary",
       },
       {
         label: "Notes",
         href: "/dashboard/notes",
         icon: FileText,
-        badge: 7,
+        badge: 0,
         badgeVariant: "secondary",
       },
     ],
@@ -110,7 +121,7 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Notifications",
         href: "/dashboard/notifications",
         icon: Bell,
-        badge: 3,
+        badge: 0,
       },
       { label: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
@@ -167,14 +178,35 @@ function getUserRole(user: any) {
 
 // ─── Components ─────────────────────────────────────────────────────────────
 
+function NavBadgeSkeleton() {
+  return <Skeleton className="ml-auto h-4 w-8 rounded-full" />;
+}
+
 function NavBadge({
   badge,
   variant,
+  loading,
 }: {
   badge: NavItem["badge"];
   variant: NavItem["badgeVariant"];
+  loading?: boolean;
 }) {
-  if (!badge) return null;
+  if (loading && (badge === 0 || badge === undefined)) {
+    return <NavBadgeSkeleton />;
+  }
+
+  if (!badge && badge !== 0) return null;
+
+  if (badge === 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="ml-auto text-[10px] h-4 px-1.5 font-medium text-muted-foreground"
+      >
+        0
+      </Badge>
+    );
+  }
 
   if (variant === "new") {
     return (
@@ -206,10 +238,12 @@ function DesktopNavLink({
   item,
   collapsed,
   active,
+  loading,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  loading?: boolean;
 }) {
   const Icon = item.icon;
 
@@ -235,7 +269,11 @@ function DesktopNavLink({
       {!collapsed && (
         <>
           <span className="flex-1 truncate">{item.label}</span>
-          <NavBadge badge={item.badge} variant={item.badgeVariant} />
+          <NavBadge
+            badge={item.badge}
+            variant={item.badgeVariant}
+            loading={loading}
+          />
         </>
       )}
     </Link>
@@ -247,8 +285,12 @@ function DesktopNavLink({
         <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
         <TooltipContent side="right" className="flex items-center gap-2">
           {item.label}
-          {item.badge && (
-            <NavBadge badge={item.badge} variant={item.badgeVariant} />
+          {item.badge !== undefined && (
+            <NavBadge
+              badge={item.badge}
+              variant={item.badgeVariant}
+              loading={loading}
+            />
           )}
         </TooltipContent>
       </Tooltip>
@@ -258,12 +300,204 @@ function DesktopNavLink({
   return linkContent;
 }
 
+// ─── Team Sub-Menu Component ──────────────────────────────────────────────
+
+function TeamSubMenu({
+  collapsed,
+  loading,
+  pathname,
+}: {
+  collapsed: boolean;
+  loading: boolean;
+  pathname: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const isTeamActive = pathname.startsWith("/dashboard/team");
+  const isTeamDashboardActive = pathname === "/dashboard/team-dashboard";
+  const isTeamManagementActive = pathname === "/dashboard/team";
+
+  useEffect(() => {
+    if (isTeamActive) {
+      setIsOpen(true);
+    }
+  }, [isTeamActive]);
+
+  if (collapsed) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <div
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer",
+              isTeamActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <User2
+              className={cn(
+                "w-5 h-5 shrink-0",
+                isTeamActive
+                  ? "text-violet-600 dark:text-violet-400"
+                  : "text-muted-foreground",
+              )}
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="p-2">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-muted-foreground px-2 pb-1">
+              Team
+            </p>
+            <Link
+              href="/dashboard/team-dashboard"
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors",
+                isTeamDashboardActive
+                  ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                  : "hover:bg-accent hover:text-gray-700",
+              )}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Dashboard
+            </Link>
+            <Link
+              href="/dashboard/team"
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors",
+                isTeamManagementActive
+                  ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                  : "hover:bg-accent hove:text-violet-700",
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Management
+            </Link>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "flex items-center w-full gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all duration-150",
+          isTeamActive
+            ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <User2
+          className={cn(
+            "w-4 h-4 shrink-0",
+            isTeamActive
+              ? "text-violet-600 dark:text-violet-400"
+              : "text-muted-foreground",
+          )}
+        />
+        <span className="flex-1 text-left">Team</span>
+        {isOpen ? (
+          <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="ml-4 space-y-0.5 border-l-2 border-muted pl-2">
+          <Link
+            href="/dashboard/team-dashboard"
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-all duration-150",
+              isTeamDashboardActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+            <span>Dashboard</span>
+            <Badge variant="outline" className="ml-auto text-[10px]">
+              New
+            </Badge>
+          </Link>
+
+          <Link
+            href="/dashboard/team"
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-all duration-150",
+              isTeamManagementActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span>Management</span>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Desktop Sidebar ──────────────────────────────────────────────────
 
 export default function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [counts, setCounts] = useState<DashboardCounts | null>(null);
+  const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const { user, isLoaded, isSignedIn } = useUser();
+
+  useEffect(() => {
+    async function fetchCounts() {
+      if (!isSignedIn || !user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) throw new Error("Failed to fetch dashboard data");
+        const result = await res.json();
+
+        if (result.success && result.data) {
+          const data = result.data;
+          setCounts({
+            tasks: data.tasks?.total || 0,
+            projects: data.projects?.total || 0,
+            notes: data.notes?.total || 0,
+          });
+        }
+      } catch (error) {
+        console.error("❌ Failed to fetch sidebar counts:", error);
+        setCounts({ tasks: 0, projects: 0, notes: 0 });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchCounts();
+  }, [isSignedIn, user?.id]);
+
+  const navItemsWithBadges = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      if (item.label === "Tasks" && counts) {
+        return { ...item, badge: counts.tasks };
+      }
+      if (item.label === "Projects" && counts) {
+        return { ...item, badge: counts.projects };
+      }
+      if (item.label === "Notes" && counts) {
+        return { ...item, badge: counts.notes };
+      }
+      return item;
+    }),
+  }));
 
   const userInitials = isLoaded && isSignedIn ? getUserInitials(user) : "?";
   const userDisplayName =
@@ -278,7 +512,7 @@ export default function DesktopSidebar() {
           collapsed ? "w-[60px]" : "w-[240px]",
         )}
       >
-        {/* ── Logo ── */}
+        {/* Logo */}
         <div
           className={cn(
             "flex items-center gap-2.5 border-b border-border",
@@ -300,7 +534,7 @@ export default function DesktopSidebar() {
           )}
         </div>
 
-        {/* ── User ── */}
+        {/* User */}
         <div
           className={cn(
             "border-b border-border",
@@ -373,10 +607,10 @@ export default function DesktopSidebar() {
           </DropdownMenu>
         </div>
 
-        {/* ── Nav ── */}
-        <ScrollArea className="flex-1 py-2">
+        {/* Nav */}
+        <ScrollArea className="flex-1 py-2 h-[200px]">
           <div className={cn("space-y-4", collapsed ? "px-2" : "px-3")}>
-            {NAV_SECTIONS.map((section) => (
+            {navItemsWithBadges.map((section) => (
               <div key={section.title} className="space-y-0.5">
                 {!collapsed && (
                   <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-widest px-2.5 mb-1">
@@ -390,14 +624,30 @@ export default function DesktopSidebar() {
                     item={item}
                     collapsed={collapsed}
                     active={pathname === item.href}
+                    loading={loading}
                   />
                 ))}
               </div>
             ))}
+
+            {/* ─── Team Sub-Menu ─── */}
+            <div className="space-y-0.5">
+              {!collapsed && (
+                <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-widest px-2.5 mb-1">
+                  Team
+                </p>
+              )}
+              {collapsed && <Separator className="my-1" />}
+              <TeamSubMenu
+                collapsed={collapsed}
+                loading={loading}
+                pathname={pathname}
+              />
+            </div>
           </div>
         </ScrollArea>
 
-        {/* ── Collapse Button ── */}
+        {/* Collapse Button */}
         <div
           className={cn(
             "border-t border-border p-2",
