@@ -15,9 +15,12 @@ import {
   Settings,
   Code2,
   ChevronDown,
+  ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
   User2,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 import { useUser, SignOutButton } from "@clerk/nextjs";
 
@@ -88,13 +91,6 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Notes",
         href: "/dashboard/notes",
         icon: FileText,
-        badge: 0,
-        badgeVariant: "secondary",
-      },
-      {
-        label: "Teams",
-        href: "/dashboard/team",
-        icon: User2,
         badge: 0,
         badgeVariant: "secondary",
       },
@@ -195,14 +191,12 @@ function NavBadge({
   variant: NavItem["badgeVariant"];
   loading?: boolean;
 }) {
-  // Show skeleton while loading
   if (loading && (badge === 0 || badge === undefined)) {
     return <NavBadgeSkeleton />;
   }
 
   if (!badge && badge !== 0) return null;
 
-  // Show 0 as "0" not empty
   if (badge === 0) {
     return (
       <Badge
@@ -306,6 +300,149 @@ function DesktopNavLink({
   return linkContent;
 }
 
+// ─── Team Sub-Menu Component ──────────────────────────────────────────────
+
+function TeamSubMenu({
+  collapsed,
+  loading,
+  pathname,
+}: {
+  collapsed: boolean;
+  loading: boolean;
+  pathname: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const isTeamActive = pathname.startsWith("/dashboard/team");
+  const isTeamDashboardActive = pathname === "/dashboard/team-dashboard";
+  const isTeamManagementActive = pathname === "/dashboard/team";
+
+  useEffect(() => {
+    if (isTeamActive) {
+      setIsOpen(true);
+    }
+  }, [isTeamActive]);
+
+  if (collapsed) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <div
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer",
+              isTeamActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <User2
+              className={cn(
+                "w-5 h-5 shrink-0",
+                isTeamActive
+                  ? "text-violet-600 dark:text-violet-400"
+                  : "text-muted-foreground",
+              )}
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="p-2">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-muted-foreground px-2 pb-1">
+              Team
+            </p>
+            <Link
+              href="/dashboard/team-dashboard"
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors",
+                isTeamDashboardActive
+                  ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                  : "hover:bg-accent hover:text-gray-700",
+              )}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Dashboard
+            </Link>
+            <Link
+              href="/dashboard/team"
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors",
+                isTeamManagementActive
+                  ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                  : "hover:bg-accent hove:text-violet-700",
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Management
+            </Link>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "flex items-center w-full gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all duration-150",
+          isTeamActive
+            ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <User2
+          className={cn(
+            "w-4 h-4 shrink-0",
+            isTeamActive
+              ? "text-violet-600 dark:text-violet-400"
+              : "text-muted-foreground",
+          )}
+        />
+        <span className="flex-1 text-left">Team</span>
+        {isOpen ? (
+          <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="ml-4 space-y-0.5 border-l-2 border-muted pl-2">
+          <Link
+            href="/dashboard/team-dashboard"
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-all duration-150",
+              isTeamDashboardActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+            <span>Dashboard</span>
+            <Badge variant="outline" className="ml-auto text-[10px]">
+              New
+            </Badge>
+          </Link>
+
+          <Link
+            href="/dashboard/team"
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-all duration-150",
+              isTeamManagementActive
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span>Management</span>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Desktop Sidebar ──────────────────────────────────────────────────
 
 export default function DesktopSidebar() {
@@ -314,8 +451,6 @@ export default function DesktopSidebar() {
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const { user, isLoaded, isSignedIn } = useUser();
-
-  // ─── Fetch Real Data ──────────────────────────────────────────────────────
 
   useEffect(() => {
     async function fetchCounts() {
@@ -339,7 +474,6 @@ export default function DesktopSidebar() {
         }
       } catch (error) {
         console.error("❌ Failed to fetch sidebar counts:", error);
-        // Set default values on error
         setCounts({ tasks: 0, projects: 0, notes: 0 });
       } finally {
         setLoading(false);
@@ -348,8 +482,6 @@ export default function DesktopSidebar() {
 
     fetchCounts();
   }, [isSignedIn, user?.id]);
-
-  // ─── Update Nav Items with Real Data ──────────────────────────────────────
 
   const navItemsWithBadges = NAV_SECTIONS.map((section) => ({
     ...section,
@@ -363,7 +495,6 @@ export default function DesktopSidebar() {
       if (item.label === "Notes" && counts) {
         return { ...item, badge: counts.notes };
       }
-      // Keep static badges for other items (like "New", notifications)
       return item;
     }),
   }));
@@ -373,8 +504,6 @@ export default function DesktopSidebar() {
     isLoaded && isSignedIn ? getUserDisplayName(user) : "Guest";
   const userRole = isLoaded && isSignedIn ? getUserRole(user) : "";
 
-  // ─── Render ──────────────────────────────────────────────────────────────
-
   return (
     <TooltipProvider>
       <aside
@@ -383,7 +512,7 @@ export default function DesktopSidebar() {
           collapsed ? "w-[60px]" : "w-[240px]",
         )}
       >
-        {/* ── Logo ── */}
+        {/* Logo */}
         <div
           className={cn(
             "flex items-center gap-2.5 border-b border-border",
@@ -405,7 +534,7 @@ export default function DesktopSidebar() {
           )}
         </div>
 
-        {/* ── User ── */}
+        {/* User */}
         <div
           className={cn(
             "border-b border-border",
@@ -478,8 +607,8 @@ export default function DesktopSidebar() {
           </DropdownMenu>
         </div>
 
-        {/* ── Nav ── */}
-        <ScrollArea className="flex-1 py-2">
+        {/* Nav */}
+        <ScrollArea className="flex-1 py-2 h-[200px]">
           <div className={cn("space-y-4", collapsed ? "px-2" : "px-3")}>
             {navItemsWithBadges.map((section) => (
               <div key={section.title} className="space-y-0.5">
@@ -500,10 +629,25 @@ export default function DesktopSidebar() {
                 ))}
               </div>
             ))}
+
+            {/* ─── Team Sub-Menu ─── */}
+            <div className="space-y-0.5">
+              {!collapsed && (
+                <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-widest px-2.5 mb-1">
+                  Team
+                </p>
+              )}
+              {collapsed && <Separator className="my-1" />}
+              <TeamSubMenu
+                collapsed={collapsed}
+                loading={loading}
+                pathname={pathname}
+              />
+            </div>
           </div>
         </ScrollArea>
 
-        {/* ── Collapse Button ── */}
+        {/* Collapse Button */}
         <div
           className={cn(
             "border-t border-border p-2",
