@@ -345,6 +345,7 @@ export async function acceptInvitation(data: AcceptInvitationInput) {
         error: "Invalid or expired invitation",
       };
     }
+    const orgName = invitation.organizationId.name;
 
     // ✅ 2. Check if invitation has expired
     if (invitation.expiresAt < new Date()) {
