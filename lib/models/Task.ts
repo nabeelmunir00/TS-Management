@@ -31,13 +31,24 @@ export interface ITask extends Document {
   dueDate?: Date;
   estimatedHours?: number;
   actualHours?: number;
+
+  // ✅ Assignment Fields
   assignedTo?: string;
+  assignedByName?: string;
+  assignedToAvatar?: string;
+  assignedAt?: Date;
+  assignedBy?: string;
+
   tags: string[];
   subtasks: ISubtask[];
   attachments: IAttachment[];
   aiSuggestions?: string;
   isArchived: boolean;
   completedAt?: Date;
+
+  // ✅ Comments Count
+  commentCount: number;
+
   createdAt: Date;
   updatedAt: Date;
 
@@ -104,12 +115,6 @@ const TaskSchema = new Schema<ITask>(
       type: Date,
       required: false,
       index: true,
-      validate: {
-        validator: function (value: Date) {
-          return !value || value >= new Date(Date.now() - 86400000); // Can't be more than 1 day in past
-        },
-        message: "Due date cannot be in the past",
-      },
     },
     estimatedHours: {
       type: Number,
@@ -123,11 +128,30 @@ const TaskSchema = new Schema<ITask>(
       max: [1000, "Actual hours cannot exceed 1000"],
       required: false,
     },
+
+    // ─── Assignment Fields ──────────────────────────────────────────────────
     assignedTo: {
       type: String,
       required: false,
       index: true,
     },
+    assignedByName: {
+      type: String,
+      required: false,
+    },
+    assignedToAvatar: {
+      type: String,
+      required: false,
+    },
+    assignedAt: {
+      type: Date,
+      required: false,
+    },
+    assignedBy: {
+      type: String,
+      required: false,
+    },
+
     tags: {
       type: [String],
       default: [],
@@ -188,6 +212,13 @@ const TaskSchema = new Schema<ITask>(
       type: Date,
       required: false,
     },
+
+    // ─── Comments Count ────────────────────────────────────────────────────
+    commentCount: {
+      type: Number,
+      default: 0,
+      min: [0, "Comment count cannot be negative"],
+    },
   },
   {
     timestamps: {
@@ -208,6 +239,7 @@ TaskSchema.index({ userId: 1, priority: 1, isArchived: 1 });
 TaskSchema.index({ userId: 1, dueDate: 1 });
 TaskSchema.index({ userId: 1, createdAt: -1 });
 TaskSchema.index({ userId: 1, title: "text" });
+TaskSchema.index({ userId: 1, assignedTo: 1 });
 
 // ─── Virtuals ──────────────────────────────────────────────────────────────────
 
@@ -249,7 +281,6 @@ TaskSchema.pre("save", async function (this: ITask) {
     this.status === "done" &&
     !this.actualHours
   ) {
-    // If estimated hours exist, use that as actual
     if (this.estimatedHours) {
       this.actualHours = this.estimatedHours;
     }
@@ -264,7 +295,7 @@ TaskSchema.pre(/^find/, function (this: mongoose.Query<any, ITask>) {
   }
 });
 
-// ─── Statics ──────────────────────────────────────────────────────────────────
+// ─── Statics Interface ──────────────────────────────────────────────────────
 
 interface ITaskModel extends Model<ITask> {
   findByTaskId(userId: string, taskId: string): Promise<ITask | null>;
@@ -279,6 +310,7 @@ interface ITaskModel extends Model<ITask> {
     overdue: number;
     highPriority: number;
   }>;
+  getTaskStats(userId: string): Promise<any>;
 }
 
 // ─── Static Methods ──────────────────────────────────────────────────────────
@@ -310,6 +342,8 @@ TaskSchema.statics.findCompleted = async function (
     .sort({ completedAt: -1 })
     .limit(50);
 };
+
+// ─── Get Dashboard Stats ──────────────────────────────────────────────────
 
 TaskSchema.statics.getDashboardStats = async function (
   userId: string,
@@ -381,8 +415,10 @@ TaskSchema.statics.getDashboardStats = async function (
   );
 };
 
-TaskSchema.statics.getDashboardStats = async function (userId: string) {
-  return this.aggregate([
+// ─── Get Task Stats (for dashboard) ──────────────────────────────────────
+
+TaskSchema.statics.getTaskStats = async function (userId: string) {
+  const [stats] = await this.aggregate([
     { $match: { userId, isArchived: false } },
     {
       $group: {
@@ -411,9 +447,49 @@ TaskSchema.statics.getDashboardStats = async function (userId: string) {
             ],
           },
         },
+        assigned: {
+          $sum: { $cond: [{ $ne: ["$assignedTo", null] }, 1, 0] },
+        },
+        unassigned: {
+          $sum: { $cond: [{ $eq: ["$assignedTo", null] }, 1, 0] },
+        },
       },
     },
   ]);
+
+  // Calculate due today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dueToday = await this.countDocuments({
+    userId,
+    isArchived: false,
+    dueDate: { $gte: today, $lt: tomorrow },
+    status: { $ne: "done" },
+  });
+
+  const result = stats[0] || {
+    total: 0,
+    completed: 0,
+    inProgress: 0,
+    todo: 0,
+    review: 0,
+    highPriority: 0,
+    overdue: 0,
+    assigned: 0,
+    unassigned: 0,
+  };
+
+  return {
+    ...result,
+    dueToday,
+    completionRate:
+      result.total > 0
+        ? Math.round((result.completed / result.total) * 100)
+        : 0,
+  };
 };
 
 // ─── Model ──────────────────────────────────────────────────────────────────

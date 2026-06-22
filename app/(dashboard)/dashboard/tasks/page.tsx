@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Search,
@@ -171,20 +173,36 @@ function TaskCard({
   onArchive: (id: string) => void;
   compact?: boolean;
 }) {
+  const router = useRouter();
   const StatusIcon = STATUS_CONFIG[task.status].icon;
   const subtasksDone = task.subtasks?.filter((s) => s.done).length ?? 0;
   const subtasksTotal = task.subtasks?.length ?? 0;
   const overdue = isOverdue(task.dueDate || task.createdAt, task.status);
   const taskId = task._id || task.id;
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Prevent navigation if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (
+      target.closest("button") ||
+      target.closest("[role='menuitem']") ||
+      target.closest("a")
+    ) {
+      e.preventDefault();
+      return;
+    }
+    router.push(`/dashboard/tasks/${taskId}`);
+  };
+
   return (
     <div
       className={cn(
-        "group relative bg-card border rounded-lg transition-all",
+        "group relative bg-card border rounded-lg transition-all cursor-pointer",
         "hover:border-violet-200 hover:shadow-sm",
         task.status === "done" && "opacity-60",
         compact ? "p-3" : "p-4",
       )}
+      onClick={handleCardClick}
     >
       {/* Priority stripe */}
       <span
@@ -197,7 +215,10 @@ function TaskCard({
       <div className={cn("flex items-start gap-3", compact ? "pl-2" : "pl-3")}>
         {/* Toggle */}
         <button
-          onClick={() => onToggle(taskId)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle(taskId);
+          }}
           className="mt-0.5 shrink-0 text-muted-foreground hover:text-violet-500 transition-colors"
         >
           {task.status === "done" ? (
@@ -233,32 +254,45 @@ function TaskCard({
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem
-                  onClick={() => onEdit(task)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(task);
+                  }}
                   className="text-xs gap-2 cursor-pointer"
                 >
                   <Edit className="w-3.5 h-3.5" /> Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => onDuplicate(task)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDuplicate(task);
+                  }}
                   className="text-xs gap-2 cursor-pointer"
                 >
                   <Copy className="w-3.5 h-3.5" /> Duplicate
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => onArchive(taskId)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onArchive(taskId);
+                  }}
                   className="text-xs gap-2 cursor-pointer"
                 >
                   <Archive className="w-3.5 h-3.5" /> Archive
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => onDelete(taskId)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(taskId);
+                  }}
                   className="text-xs gap-2 text-destructive cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -428,6 +462,7 @@ function BoardView({
 
 export default function TasksPage() {
   const { user, isLoaded } = useUser();
+  const router = useRouter();
 
   // ── State ──
   const [tasks, setTasks] = useState<Task[]>([]);
