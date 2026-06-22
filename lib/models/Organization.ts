@@ -5,7 +5,7 @@ export interface IOrganization extends Document {
   name: string;
   slug: string;
   logo?: string;
-  ownerId: string; // Clerk user ID
+  ownerId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +32,6 @@ const OrganizationSchema = new Schema<IOrganization>(
     ownerId: {
       type: String,
       required: [true, "Owner ID is required"],
-      index: true,
     },
   },
   {
@@ -44,5 +43,9 @@ const OrganizationSchema = new Schema<IOrganization>(
 OrganizationSchema.index({ slug: 1 });
 OrganizationSchema.index({ ownerId: 1 });
 
-export default mongoose.models.Organization ||
+// ✅ Register model properly
+const Organization =
+  mongoose.models.Organization ||
   mongoose.model<IOrganization>("Organization", OrganizationSchema);
+
+export default Organization;

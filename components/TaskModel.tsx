@@ -1,4 +1,3 @@
-// components/TaskFormModal.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -18,6 +17,8 @@ import {
   Link,
   Paperclip,
   Trash2,
+  Users,
+  AtSign,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -86,12 +88,15 @@ export interface Task {
   estimatedHours?: number;
   actualHours?: number;
   assignedTo?: string;
+  assignedByName?: string;
+  assignedToAvatar?: string;
   assigneeAvatar?: string;
   tags?: string[];
   subtasks?: SubTask[];
   attachments?: Attachment[];
   aiSuggestions?: string;
   isArchived?: boolean;
+  commentCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -140,6 +145,15 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", color: "bg-emerald-100 text-emerald-600" },
 ];
 
+// ─── Team Members (Mock - Replace with actual API) ──────────────────────
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TaskFormModal({
@@ -162,10 +176,15 @@ export function TaskFormModal({
     tags: [],
     subtasks: [],
     attachments: [],
+    assignedTo: "",
+    assignedByName: "",
+    assignedToAvatar: "",
   });
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [newAttachment, setNewAttachment] = useState({
     name: "",
@@ -190,7 +209,6 @@ export function TaskFormModal({
    * Fetch projects when modal opens
    */
   const fetchProjects = useCallback(async () => {
-    debugger;
     if (!open) return;
 
     try {
@@ -212,11 +230,50 @@ export function TaskFormModal({
     }
   }, [open]);
 
+  /**
+   * Fetch team members
+   */
+  const fetchTeamMembers = useCallback(async () => {
+    if (!open) return;
+
+    try {
+      setLoadingMembers(true);
+      // Get organization ID from localStorage or context
+      const orgId = localStorage.getItem("currentOrganizationId");
+      // const orgId = "6a366d73c16ded7cca83962e";
+      if (!orgId) {
+        setTeamMembers([]);
+        return;
+      }
+
+      const res = await fetch(`/api/team/members?organizationId=${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch team members");
+
+      const data = await res.json();
+      if (data.success) {
+        setTeamMembers(
+          data.data.map((m: any) => ({
+            id: m.userId,
+            name: m.name || m.email.split("@")[0],
+            email: m.email,
+            avatar: m.avatar,
+          })),
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      // Don't show error to user, just use empty list
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [open]);
+
   useEffect(() => {
     if (open) {
       fetchProjects();
+      fetchTeamMembers();
     }
-  }, [open, fetchProjects]);
+  }, [open, fetchProjects, fetchTeamMembers]);
 
   /**
    * Sync form whenever the `task` prop changes OR the modal opens.
@@ -236,7 +293,8 @@ export function TaskFormModal({
           estimatedHours: task.estimatedHours,
           actualHours: task.actualHours,
           assignedTo: task.assignedTo || "",
-          assigneeAvatar: task.assigneeAvatar || "",
+          assignedByName: task.assignedByName || "",
+          assignedToAvatar: task.assignedToAvatar || task.assigneeAvatar || "",
           tags: task.tags || [],
           subtasks: task.subtasks || [],
           attachments: task.attachments || [],
@@ -255,6 +313,9 @@ export function TaskFormModal({
           tags: [],
           subtasks: [],
           attachments: [],
+          assignedTo: "",
+          assignedByName: "",
+          assignedToAvatar: "",
         });
       }
 
@@ -395,6 +456,34 @@ export function TaskFormModal({
     setForm({ ...form, attachments: newAttachments });
   };
 
+  // ── Assignee helpers ──
+  const handleAssigneeChange = (userId: string) => {
+    if (!userId) {
+      setForm({
+        ...form,
+        assignedTo: "",
+        assignedByName: "",
+        assignedToAvatar: "",
+      });
+      return;
+    }
+
+    const member = teamMembers.find((m) => m.id === userId);
+    if (member) {
+      setForm({
+        ...form,
+        assignedTo: member.id,
+        assignedByName: member.name,
+        assignedToAvatar: member.avatar || "",
+      });
+    }
+  };
+
+  const getSelectedMember = () => {
+    if (!form.assignedTo) return "";
+    return form.assignedTo;
+  };
+
   // ── Save ──
   const handleSave = async () => {
     // Validate
@@ -416,6 +505,9 @@ export function TaskFormModal({
         tags: form.tags || [],
         subtasks: form.subtasks || [],
         attachments: form.attachments || [],
+        assignedTo: form.assignedTo || undefined,
+        assignedByName: form.assignedByName || undefined,
+        assignedToAvatar: form.assignedToAvatar || undefined,
       };
 
       await onSave(taskData);
@@ -780,19 +872,67 @@ export function TaskFormModal({
                 </div>
               </div>
 
-              {/* ── Assignee ── */}
+              {/* ── Assignee (Updated with Team Members) ── */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium flex items-center gap-1">
-                  <User className="w-3 h-3" /> Assignee
+                  <Users className="w-3 h-3" /> Assignee
                 </Label>
-                <Input
-                  value={form.assignedTo || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, assignedTo: e.target.value })
-                  }
-                  placeholder="Assign to someone..."
-                  className="text-sm h-10 rounded-lg border-muted-foreground/20"
-                />
+                <Select
+                  value={getSelectedMember()}
+                  onValueChange={handleAssigneeChange}
+                  disabled={loadingMembers}
+                >
+                  <SelectTrigger className="text-sm h-10 rounded-lg border-muted-foreground/20">
+                    <SelectValue placeholder="Assign to someone..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Unassigned</SelectItem>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        <span className="flex items-center gap-2">
+                          <Avatar className="w-5 h-5">
+                            {member.avatar ? (
+                              <AvatarImage
+                                src={member.avatar}
+                                alt={member.name}
+                              />
+                            ) : (
+                              <AvatarFallback className="text-[8px] bg-violet-100 text-violet-700">
+                                {member.name.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            )}
+                          </Avatar>
+                          {member.name} ({member.email})
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {loadingMembers && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Loading team members...
+                  </p>
+                )}
+                {form.assignedTo && form.assignedByName && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800">
+                    <Avatar className="w-6 h-6">
+                      {form.assignedToAvatar ? (
+                        <AvatarImage
+                          src={form.assignedToAvatar}
+                          alt={form.assignedByName}
+                        />
+                      ) : (
+                        <AvatarFallback className="text-[8px] bg-violet-200 text-violet-700">
+                          {form.assignedByName.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <span className="text-xs font-medium">
+                      Assigned to: {form.assignedByName}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* ── Tags ── */}
