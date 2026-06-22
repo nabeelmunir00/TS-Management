@@ -587,7 +587,7 @@ function NoteFormModal({
     }
   };
 
-  const isValid = form.title?.trim().length > 0;
+  const isValid = !!form?.title?.trim().length;
   const saving = isLoading || isSaving;
 
   return (
@@ -727,7 +727,7 @@ function NoteFormModal({
                       }
                       setDatePickerOpen(false);
                     }}
-                    initialFocus
+                    // removed initialFocus prop: not supported by CalendarComponent/DayPicker
                   />
                 </PopoverContent>
               </Popover>
@@ -856,7 +856,7 @@ export default function NotesPage() {
     if (isLoaded && user?.id) {
       fetchNotes();
     }
-  }, [isLoaded, user, fetchNotes]);
+  }, [isLoaded, user?.id, fetchNotes]);
 
   // ── Handlers ──
   const openNewNote = () => {

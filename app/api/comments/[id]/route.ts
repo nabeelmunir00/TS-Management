@@ -11,7 +11,7 @@ import {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> }, // ✅ Fixed: params is Promise
 ) {
   try {
     const { userId } = await auth();
@@ -19,7 +19,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id } = await params; // ✅ Await the params
     const body = await request.json();
 
     const result = await updateComment({
@@ -31,7 +31,7 @@ export async function PATCH(
     if (!result.success) {
       return NextResponse.json(
         { error: result.error },
-        { status: result.error.includes("unauthorized") ? 403 : 500 },
+        { status: result.error?.includes("unauthorized") ? 403 : 500 },
       );
     }
 
@@ -53,7 +53,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> }, // ✅ Fixed: params is Promise
 ) {
   try {
     const { userId } = await auth();
@@ -61,14 +61,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id } = await params; // ✅ Await the params
 
     const result = await deleteComment(id, userId);
 
     if (!result.success) {
       return NextResponse.json(
         { error: result.error },
-        { status: result.error.includes("unauthorized") ? 403 : 500 },
+        { status: result.error?.includes("unauthorized") ? 403 : 500 },
       );
     }
 
@@ -89,7 +89,7 @@ export async function DELETE(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> }, // ✅ Fixed: params is Promise
 ) {
   try {
     const { userId } = await auth();
@@ -97,7 +97,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id } = await params; // ✅ Await the params
     const body = await request.json();
 
     if (!body.reaction) {
