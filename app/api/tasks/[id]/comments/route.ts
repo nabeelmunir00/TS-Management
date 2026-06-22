@@ -81,12 +81,16 @@ export async function POST(
       );
     }
 
+    // ✅ Create comment with user data from frontend
     const result = await createComment({
       taskId: id,
-      userId,
+      userId: userId,
       content: body.content,
-      parentId: body.parentId,
+      parentId: body.parentId || null,
       mentions: body.mentions || [],
+      email: body.email || "",
+      userName: body.userName || "User",
+      avatar: body.avatar || "",
     });
 
     if (!result.success) {

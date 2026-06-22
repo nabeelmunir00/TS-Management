@@ -1,4 +1,3 @@
-// components/TaskComments.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -44,6 +43,9 @@ interface Comment {
   _id: string;
   taskId: string;
   userId: string;
+  email: string;
+  userName: string;
+  avatar?: string;
   content: string;
   parentId?: string;
   mentions: string[];
@@ -89,6 +91,59 @@ const REACTION_COLORS = {
   angry: "text-orange-500",
 };
 
+// ─── Helper Functions ──────────────────────────────────────────────────────
+
+function getUserInitials(user: any): string {
+  if (!user) return "?";
+
+  if (user.fullName) {
+    const names = user.fullName.split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return user.fullName.slice(0, 2).toUpperCase();
+  }
+
+  if (user.firstName) {
+    return user.firstName.slice(0, 2).toUpperCase();
+  }
+
+  if (user.username) {
+    return user.username.slice(0, 2).toUpperCase();
+  }
+
+  if (user.emailAddresses && user.emailAddresses.length > 0) {
+    return user.emailAddresses[0].emailAddress.slice(0, 2).toUpperCase();
+  }
+
+  return "?";
+}
+
+function getUserDisplayName(user: any): string {
+  if (!user) return "User";
+
+  if (user.fullName) return user.fullName;
+  if (user.firstName) return user.firstName;
+  if (user.username) return user.username;
+  if (user.emailAddresses && user.emailAddresses.length > 0) {
+    return user.emailAddresses[0].emailAddress.split("@")[0];
+  }
+  return "User";
+}
+
+function getUserEmail(user: any): string {
+  if (!user) return "";
+  if (user.emailAddresses && user.emailAddresses.length > 0) {
+    return user.emailAddresses[0].emailAddress;
+  }
+  return "";
+}
+
+function getUserAvatar(user: any): string {
+  if (!user) return "";
+  return user.imageUrl || "";
+}
+
 // ─── Comment Item ──────────────────────────────────────────────────────────
 
 function CommentItem({
@@ -113,8 +168,14 @@ function CommentItem({
   const [showReplies, setShowReplies] = useState(true);
   const isOwner = comment.userId === currentUserId;
 
-  const getInitials = (userId: string) => {
-    return userId.slice(0, 2).toUpperCase();
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   const handleEdit = () => {
@@ -143,8 +204,11 @@ function CommentItem({
       <div className="flex gap-3">
         {/* Avatar */}
         <Avatar className="w-8 h-8 shrink-0">
+          {comment.avatar ? (
+            <AvatarImage src={comment.avatar} alt={comment.userName} />
+          ) : null}
           <AvatarFallback className="bg-violet-100 text-violet-700 text-xs">
-            {getInitials(comment.userId)}
+            {getInitials(comment.userName || comment.email || "User")}
           </AvatarFallback>
         </Avatar>
 
@@ -153,7 +217,9 @@ function CommentItem({
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-medium">
-                {comment.userId === currentUserId ? "You" : comment.userId}
+                {comment.userId === currentUserId
+                  ? "You"
+                  : comment.userName || comment.email}
               </p>
               <p className="text-[10px] text-muted-foreground">
                 {format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}
@@ -299,7 +365,7 @@ function CommentItem({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function TaskComments({ taskId, taskTitle }: TaskCommentsProps) {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState("");
@@ -344,12 +410,21 @@ export default function TaskComments({ taskId, taskTitle }: TaskCommentsProps) {
     setIsSubmitting(true);
 
     try {
+      // ✅ Get user data from Clerk
+      const userData = {
+        userId: user.id,
+        email: getUserEmail(user),
+        userName: getUserDisplayName(user),
+        avatar: getUserAvatar(user),
+      };
+
       const res = await fetch(`/api/tasks/${taskId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: newComment.trim(),
           parentId: replyingTo?._id || null,
+          ...userData, // ✅ Send user data to API
         }),
       });
 
@@ -446,6 +521,14 @@ export default function TaskComments({ taskId, taskTitle }: TaskCommentsProps) {
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -469,7 +552,9 @@ export default function TaskComments({ taskId, taskTitle }: TaskCommentsProps) {
           <div className="flex items-center justify-between bg-muted/50 p-2 rounded-lg">
             <p className="text-xs text-muted-foreground">
               Replying to{" "}
-              <span className="font-medium">{replyingTo.userId}</span>
+              <span className="font-medium">
+                {replyingTo.userName || replyingTo.email}
+              </span>
             </p>
             <Button
               variant="ghost"

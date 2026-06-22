@@ -17,6 +17,9 @@ export interface IComment extends Document {
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
+  email: string;
+  userName: string;
+  avatar?: string;
 }
 
 const CommentSchema = new Schema<IComment>(
@@ -37,6 +40,19 @@ const CommentSchema = new Schema<IComment>(
       required: [true, "Comment content is required"],
       trim: true,
       maxlength: [5000, "Comment cannot exceed 5000 characters"],
+    },
+    email: {
+      type: String,
+      required: [true, "email is required"],
+      trim: true,
+    },
+    userName: {
+      type: String,
+      required: [true, "username is required"],
+    },
+    avatar: {
+      type: String,
+      default: "",
     },
     parentId: {
       type: mongoose.Schema.Types.ObjectId,

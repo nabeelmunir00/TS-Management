@@ -13,6 +13,9 @@ export interface CreateCommentInput {
   content: string;
   parentId?: string;
   mentions?: string[];
+  email: string; // ✅ Added
+  userName: string; // ✅ Added
+  avatar?: string; // ✅ Added
 }
 
 export interface UpdateCommentInput {
@@ -25,6 +28,14 @@ export interface AddReactionInput {
   commentId: string;
   userId: string;
   reaction: "like" | "heart" | "laugh" | "sad" | "angry";
+}
+
+export interface AssignTaskInput {
+  taskId: string;
+  assignedTo: string;
+  assignedByName: string;
+  assignedToAvatar?: string;
+  assignedBy: string;
 }
 
 // ─── Helper: Log Activity ─────────────────────────────────────────────────
@@ -57,8 +68,17 @@ export async function createComment(data: CreateCommentInput) {
   try {
     await connectDB();
 
+    // ✅ Validate
     if (!data.content.trim()) {
       return { success: false, error: "Comment content is required" };
+    }
+
+    if (!data.email) {
+      return { success: false, error: "Email is required" };
+    }
+
+    if (!data.userName) {
+      return { success: false, error: "Username is required" };
     }
 
     // Check if task exists
@@ -75,13 +95,16 @@ export async function createComment(data: CreateCommentInput) {
       }
     }
 
-    // Create comment
+    // ✅ Create comment with user data
     const comment = await Comment.create({
       taskId: data.taskId,
       userId: data.userId,
       content: data.content.trim(),
       parentId: data.parentId || null,
       mentions: data.mentions || [],
+      email: data.email,
+      userName: data.userName,
+      avatar: data.avatar || "",
     });
 
     // Increment task comment count
@@ -241,16 +264,14 @@ export async function addReaction(data: AddReactionInput) {
       return { success: false, error: "Comment not found" };
     }
 
-    // Check if user already reacted
-    const existingReaction = comment.reactions.find(
+    // Check if user already reacted with this type
+    const existingReactionIndex = comment.reactions.findIndex(
       (r) => r.userId === data.userId && r.type === data.reaction,
     );
 
-    if (existingReaction) {
+    if (existingReactionIndex !== -1) {
       // Remove reaction if already exists
-      comment.reactions = comment.reactions.filter(
-        (r) => !(r.userId === data.userId && r.type === data.reaction),
-      );
+      comment.reactions.splice(existingReactionIndex, 1);
     } else {
       // Add reaction
       comment.reactions.push({
@@ -275,14 +296,6 @@ export async function addReaction(data: AddReactionInput) {
 }
 
 // ─── 6. Assign Task to User ─────────────────────────────────────────────────
-
-export interface AssignTaskInput {
-  taskId: string;
-  assignedTo: string;
-  assignedByName: string;
-  assignedToAvatar?: string;
-  assignedBy: string;
-}
 
 export async function assignTask(data: AssignTaskInput) {
   try {
@@ -352,6 +365,59 @@ export async function getTaskAssignees(taskId: string) {
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to get assignees",
+    };
+  }
+}
+
+// ─── 8. Get Comment by ID ──────────────────────────────────────────────────
+
+export async function getCommentById(commentId: string) {
+  try {
+    await connectDB();
+
+    const comment = await Comment.findById(commentId).lean();
+
+    if (!comment) {
+      return { success: false, error: "Comment not found" };
+    }
+
+    return {
+      success: true,
+      data: comment,
+    };
+  } catch (error) {
+    console.error("❌ Get comment error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get comment",
+    };
+  }
+}
+
+// ─── 9. Get User Comments ──────────────────────────────────────────────────
+
+export async function getUserComments(userId: string, limit: number = 20) {
+  try {
+    await connectDB();
+
+    const comments = await Comment.find({
+      userId,
+      isDeleted: false,
+    })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return {
+      success: true,
+      data: comments,
+    };
+  } catch (error) {
+    console.error("❌ Get user comments error:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to get user comments",
     };
   }
 }
