@@ -151,8 +151,8 @@ const formatDue = (due: string) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-const isOverdue = (due: string, status: TaskStatus) =>
-  status !== "done" && new Date(due) < new Date();
+const isOverdue = (due: string | undefined, status: TaskStatus) =>
+  !!due && status !== "done" && new Date(due) < new Date();
 
 // ─── TaskCard ──────────────────────────────────────────────────────────────
 
@@ -217,7 +217,7 @@ function TaskCard({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onToggle(taskId);
+            onToggle(taskId as string);
           }}
           className="mt-0.5 shrink-0 text-muted-foreground hover:text-violet-500 transition-colors"
         >
@@ -281,7 +281,7 @@ function TaskCard({
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    onArchive(taskId);
+                    onArchive(taskId as string);
                   }}
                   className="text-xs gap-2 cursor-pointer"
                 >
@@ -291,7 +291,7 @@ function TaskCard({
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDelete(taskId);
+                    onDelete(taskId as string);
                   }}
                   className="text-xs gap-2 text-destructive cursor-pointer"
                 >

@@ -209,9 +209,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ Log successful creation (optional)
-    console.log(`✅ Task created: ${result.data.taskId} for user: ${userId}`);
-
     return NextResponse.json(
       {
         success: true,
@@ -299,31 +296,38 @@ export async function DELETE(request: NextRequest) {
         body.status as TaskStatus,
       );
 
-      if (!statusResult.success) {
+      if (!statusResult.success || !statusResult.data) {
         return NextResponse.json(
-          { error: statusResult.error },
+          { error: statusResult.error || "Failed to update task status" },
           { status: 500 },
         );
       }
 
+      const updatedData = statusResult.data;
+
       return NextResponse.json({
         success: true,
-        data: statusResult.data,
-        message: `${statusResult.data.modifiedCount} tasks updated successfully`,
+        data: updatedData,
+        message: `${updatedData?.modifiedCount} tasks updated successfully`,
       });
     }
 
     // ✅ Handle bulk delete
     const result = await bulkDeleteTasks(ids, userId);
 
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
+    if (!result.success || !result.data) {
+      return NextResponse.json(
+        { error: result.error || "Failed to delete tasks" },
+        { status: 500 },
+      );
     }
+
+    const deletedData = result.data;
 
     return NextResponse.json({
       success: true,
-      data: result.data,
-      message: `${result.data.deletedCount} tasks deleted successfully`,
+      data: deletedData,
+      message: `${deletedData.deletedCount} tasks deleted successfully`,
     });
   } catch (error) {
     console.error("❌ DELETE /api/tasks error:", error);

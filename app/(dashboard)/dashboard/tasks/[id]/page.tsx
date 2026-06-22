@@ -94,6 +94,7 @@ interface EditFormData {
   projectId?: string;
   assignedTo?: string;
   tags?: string[];
+  userId: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -203,8 +204,7 @@ export default function TaskDetailPage() {
   const taskId = params?.id as string;
   const userId = user?.id || "";
 
-  const canEdit =
-    task && (task.userId === userId || task.assignedTo === userId);
+  const canEdit = Boolean(task && task.assignedTo === userId);
 
   const subtasksDone =
     task?.subtasks?.filter((s: SubTask) => s.done).length ?? 0;
@@ -269,7 +269,9 @@ export default function TaskDetailPage() {
       }
 
       const data = (await res.json()) as ApiResponse<Task>;
-      setTask(data.data || data);
+      const taskData = data.data || data;
+      setTask(taskData as Task);
+
       toast.success("Task status updated!");
     } catch (err) {
       const errorMessage =
@@ -296,7 +298,9 @@ export default function TaskDetailPage() {
       }
 
       const data = (await res.json()) as ApiResponse<Task>;
-      setTask(data.data || data);
+      const taskData = data.data || data;
+      setTask(taskData as Task);
+
       setIsEditing(false);
       toast.success("Task updated successfully!");
     } catch (err) {
@@ -379,11 +383,12 @@ export default function TaskDetailPage() {
 
       if (!res.ok) {
         const err = (await res.json()) as ApiResponse;
-        throw new Error(err.error || "Failed to archive task");
+        throw new Error(err?.error || "Failed to archive task");
       }
 
       const data = (await res.json()) as ApiResponse<Task>;
-      setTask(data.data || data);
+      const taskData = data.data || data;
+      setTask(taskData as Task);
       toast.success("Task archived successfully!");
     } catch (err) {
       const errorMessage =
@@ -712,7 +717,7 @@ export default function TaskDetailPage() {
                         {task.subtasks?.map(
                           (subtask: SubTask, index: number) => (
                             <div
-                              key={subtask._id?.toString() || index}
+                              key={index}
                               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted/30"
                             >
                               <input
@@ -754,8 +759,8 @@ export default function TaskDetailPage() {
                           )}
                         </span>
                       </div>
-                      {task.taskId && (
-                        <span className="font-mono">ID: {task.taskId}</span>
+                      {task._id && (
+                        <span className="font-mono">ID: {task._id}</span>
                       )}
                     </div>
                   </CardContent>

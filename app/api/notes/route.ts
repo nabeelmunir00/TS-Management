@@ -246,7 +246,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result.data,
-      message: `${result.data.deletedCount} notes deleted successfully`,
+      message: `${result?.data?.deletedCount ?? 0} notes deleted successfully`,
     });
   } catch (error) {
     console.error("❌ DELETE /api/notes error:", error);
