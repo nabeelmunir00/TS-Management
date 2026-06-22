@@ -25,6 +25,7 @@ import {
   AtSign,
   Link2,
   Paperclip,
+  FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";

@@ -11,7 +11,7 @@ import {
   ThumbsUp,
   Heart,
   Laugh,
-  Sad,
+  Sandwich,
   Angry,
   MoreVertical,
   User,
@@ -69,7 +69,7 @@ const REACTION_ICONS = {
   like: ThumbsUp,
   heart: Heart,
   laugh: Laugh,
-  sad: Sad,
+  sad: Sandwich,
   angry: Angry,
 };
 
