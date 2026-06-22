@@ -17,10 +17,9 @@ interface DeleteConfirmModalProps {
   onClose: () => void;
   onConfirm: () => void;
   title: string;
-  type?: string;
   description?: string;
   isLoading?: boolean;
-  type?: "task" | "project" | "default";
+  type?: "task" | "project" | "default" | "note";
 }
 
 export function DeleteConfirmModal({

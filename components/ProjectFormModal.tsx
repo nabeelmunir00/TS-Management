@@ -170,7 +170,7 @@ export function ProjectFormModal({
     }
   };
 
-  const isValid = form.name?.trim().length > 0;
+  const isValid = (form.name?.trim() ?? "").length > 0;
   const saving = isLoading || isSaving;
 
   // ── Render ──

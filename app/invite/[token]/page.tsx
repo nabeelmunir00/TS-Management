@@ -73,7 +73,7 @@ export default function InvitePage() {
   const { token } = useParams();
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
-  const { signIn, redirectToSignIn } = useClerk();
+  const { redirectToSignIn } = useClerk();
 
   // ── State ──
   const [loading, setLoading] = useState(true);

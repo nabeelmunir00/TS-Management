@@ -255,13 +255,16 @@ function MobileBottomNav() {
             >
               <Icon className="w-5 h-5" />
               <span className="text-[10px] font-medium">{item.label}</span>
-              {item.badge &&
-                typeof item.badge === "number" &&
-                item.badge > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-violet-600 text-white text-[9px] flex items-center justify-center font-medium">
-                    {item.badge > 9 ? "9+" : item.badge}
-                  </span>
-                )}
+              {(() => {
+                const badge = (item as any).badge;
+                return (
+                  badge && typeof badge === "number" && badge > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-violet-600 text-white text-[9px] flex items-center justify-center font-medium">
+                      {badge > 9 ? "9+" : badge}
+                    </span>
+                  )
+                );
+              })()}
             </Link>
           );
         })}
