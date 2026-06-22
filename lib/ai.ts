@@ -50,27 +50,76 @@ export async function generateTaskData(
     });
 
     const prompt = `
-      You are a project management AI assistant. Analyze this task and generate:
+  You are an expert project management assistant.
 
-      1. 3-5 relevant tags (lowercase, hyphen-separated, descriptive)
-      2. Enhanced description (professional, clear, 1-20 sentences)
-      3. Priority: "high" if urgent/time-sensitive, "medium" if important but not urgent, "low" if nice-to-have
-      4. 2-4 subtasks (clear, actionable steps, each 3-6 words)
+  Analyze the provided task and generate intelligent project suggestions.
 
-      Task Title: "${title}"
-      ${description ? `Description: "${description}"` : "No description provided"}
+  Requirements:
 
-      IMPORTANT: Return ONLY valid JSON in this exact format (no markdown, no extra text):
+  1. suggestedTags
+    - Generate 3-5 highly relevant tags.
+    - Use lowercase only.
+    - Use hyphen-separated words.
+    - Tags should describe the task category, technology, domain, or objective.
+    - Avoid generic tags like "task", "project", or "work".
+
+  2. enhancedDescription
+    - Rewrite the task description professionally.
+    - Make it clear, actionable, and concise.
+    - Length: 1-5 sentences.
+    - If no description is provided, create a meaningful description based on the title.
+    - Do not repeat the title verbatim.
+
+  3. suggestedPriority
+    - "high" → urgent, deadline-driven, blocking, critical, or time-sensitive tasks.
+    - "medium" → important tasks with normal priority.
+    - "low" → optional, enhancement, research, or nice-to-have tasks.
+    - Return ONLY one of: "high", "medium", "low".
+
+  4. suggestedSubtasks
+    - Generate 2-4 practical subtasks.
+    - Each subtask must be a clear action item.
+    - Length: 3-6 words.
+    - Avoid vague items like "Do task" or "Complete work".
+    - Each subtask must have:
       {
-        "suggestedTags": ["tag1", "tag2", "tag3"],
-        "enhancedDescription": "Professional description here...",
-        "suggestedPriority": "medium",
-        "suggestedSubtasks": [
-          {"title": "Subtask 1", "done": false},
-          {"title": "Subtask 2", "done": false}
-        ]
+        "title": "Subtask title",
+        "done": false
       }
-    `;
+
+  Task Information:
+
+  Title: "${title}"
+
+  ${description ? `Description: "${description}"` : "Description: Not provided"}
+
+  Output Rules:
+
+  - Return ONLY valid JSON.
+  - Do NOT use markdown.
+  - Do NOT include explanations.
+  - Do NOT wrap JSON in code blocks.
+  - Do NOT include comments.
+  - All fields are required.
+
+  Expected JSON format:
+
+  {
+    "suggestedTags": ["tag-1", "tag-2", "tag-3"],
+    "enhancedDescription": "Professional task description.",
+    "suggestedPriority": "medium",
+    "suggestedSubtasks": [
+      {
+        "title": "First action item",
+        "done": false
+      },
+      {
+        "title": "Second action item",
+        "done": false
+      }
+    ]
+  }
+  `;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
