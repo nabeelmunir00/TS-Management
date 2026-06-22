@@ -37,6 +37,7 @@ interface ProjectCardProps {
   onDelete: (id: string) => void;
   onToggleStar: (id: string) => void;
   view?: ProjectView;
+  onToggleArchive: (id: string) => void;
 }
 
 export function ProjectCard({
@@ -44,6 +45,7 @@ export function ProjectCard({
   onEdit,
   onDelete,
   onToggleStar,
+  onToggleArchive,
   view = "grid",
 }: ProjectCardProps) {
   const progress = project.tasksCount
