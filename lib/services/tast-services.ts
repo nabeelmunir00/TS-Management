@@ -6,6 +6,7 @@ import connectDB from "../db";
 import { Types } from "mongoose";
 import { cache } from "react";
 import { v4 as uuidv4 } from "uuid";
+import TeamMember from "../models/TeamMember";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -179,7 +180,36 @@ export async function getAllTasks(userId: string, filters?: TaskFilters) {
   try {
     await connectDB();
 
+    const userOrg = await TeamMember.findOne({
+      userId,
+      status: "active",
+    }).populate("organizationId");
+
     const query: any = { userId };
+
+    if (userOrg) {
+      // Get all members of the organization
+      const members = await TeamMember.find({
+        organizationId: userOrg.organizationId,
+        status: "active",
+      }).select("userId");
+
+      const memberIds = members.map((m) => m.userId);
+
+      // Show tasks created by any team member OR assigned to any team member
+      query.$or = [
+        { userId: { $in: memberIds } },
+        { assignedTo: { $in: memberIds } },
+      ];
+    } else {
+      // Fallback: show only user's own tasks
+      query.$or = [{ userId: userId }, { assignedTo: userId }];
+    }
+
+    // Override isArchived if filter is provided
+    if (filters?.isArchived !== undefined) {
+      query.isArchived = filters.isArchived;
+    }
 
     // ✅ Apply filters
     if (filters?.status) query.status = filters.status;
@@ -611,6 +641,30 @@ export async function getTaskStats(userId: string) {
   try {
     await connectDB();
 
+    const userOrg = await TeamMember.findOne({
+      userId,
+      status: "active",
+    }).populate("organizationId");
+
+    const matchQuery: any = { isArchived: false };
+
+    if (userOrg) {
+      // Get all members of the organization
+      const members = await TeamMember.find({
+        organizationId: userOrg.organizationId,
+        status: "active",
+      }).select("userId");
+
+      const memberIds = members.map((m) => m.userId);
+
+      matchQuery.$or = [
+        { userId: { $in: memberIds } },
+        { assignedTo: { $in: memberIds } },
+      ];
+    } else {
+      matchQuery.$or = [{ userId: userId }, { assignedTo: userId }];
+    }
+
     const [stats, priorityStats, overdueStats] = await Promise.all([
       // ✅ Status stats
       TaskModel.aggregate([
@@ -883,6 +937,28 @@ export async function getTasksByProject(
 export async function getRecentTasks(userId: string, limit: number = 5) {
   try {
     await connectDB();
+    const userOrg = await TeamMember.findOne({
+      userId,
+      status: "active",
+    }).populate("organizationId");
+
+    const query: any = { isArchived: false };
+
+    if (userOrg) {
+      const members = await TeamMember.find({
+        organizationId: userOrg.organizationId,
+        status: "active",
+      }).select("userId");
+
+      const memberIds = members.map((m) => m.userId);
+
+      query.$or = [
+        { userId: { $in: memberIds } },
+        { assignedTo: { $in: memberIds } },
+      ];
+    } else {
+      query.$or = [{ userId: userId }, { assignedTo: userId }];
+    }
 
     const tasks = await TaskModel.find({
       userId,
