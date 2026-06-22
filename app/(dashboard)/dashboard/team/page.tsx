@@ -244,6 +244,7 @@ export default function TeamPage() {
 
   // ── Fetch Organizations ──
   const fetchOrganizations = useCallback(async () => {
+    debugger;
     if (!user?.id) return;
 
     try {
@@ -252,6 +253,11 @@ export default function TeamPage() {
       const data = await res.json();
 
       if (data.success) {
+        setLoading(() => false);
+        const setOrgId = localStorage.setItem(
+          "currentOrganizationId",
+          data.data[0]._id,
+        );
         setOrganizations(data.data);
         if (data.data.length > 0 && !currentOrg) {
           setCurrentOrg(data.data[0]._id);
@@ -315,6 +321,7 @@ export default function TeamPage() {
 
   // Organization Switch
   const handleSwitchOrganization = (orgId: string) => {
+    const setOrgId = localStorage.setItem("currentOrganizationId", orgId);
     setCurrentOrg(orgId);
   };
 
@@ -346,6 +353,10 @@ export default function TeamPage() {
       await fetchOrganizations();
 
       if (data.data?._id) {
+        const setOrgId = localStorage.setItem(
+          "currentOrganizationId",
+          data?._id,
+        );
         setCurrentOrg(data.data._id);
       }
     } catch (error) {

@@ -222,13 +222,11 @@ export default function TeamDashboardPage() {
     try {
       // Get organization ID from localStorage or default
       const orgId = localStorage.getItem("currentOrganizationId");
-      //   if (!orgId) {
-      //     throw new Error("No organization selected");
-      //   }
+      if (!orgId) {
+        throw new Error("No organization selected");
+      }
 
-      const res = await fetch(
-        `/api/team/dashboard?organizationId=6a366d73c16ded7cca83962e`,
-      );
+      const res = await fetch(`/api/team/dashboard?organizationId=${orgId}`);
       if (!res.ok) throw new Error("Failed to fetch team dashboard");
 
       const result = await res.json();

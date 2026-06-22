@@ -239,8 +239,8 @@ export function TaskFormModal({
     try {
       setLoadingMembers(true);
       // Get organization ID from localStorage or context
-      // const orgId = localStorage.getItem("currentOrganizationId");
-      const orgId = "6a366d73c16ded7cca83962e";
+      const orgId = localStorage.getItem("currentOrganizationId");
+      // const orgId = "6a366d73c16ded7cca83962e";
       if (!orgId) {
         setTeamMembers([]);
         return;

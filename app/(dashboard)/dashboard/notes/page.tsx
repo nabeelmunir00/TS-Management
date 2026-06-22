@@ -822,6 +822,7 @@ export default function NotesPage() {
 
   // ── Fetch Notes ──
   const fetchNotes = useCallback(async () => {
+    debugger;
     if (!user?.id) return;
 
     setLoading(true);

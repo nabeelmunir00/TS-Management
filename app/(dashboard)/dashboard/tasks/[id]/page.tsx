@@ -66,7 +66,35 @@ import {
 
 import TaskComments from "@/components/TaskComments";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
-import type { Task, Priority, TaskStatus } from "@/components/TaskModel";
+import type {
+  Task,
+  Priority,
+  TaskStatus,
+  SubTask,
+} from "@/components/TaskModel";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface TaskDetailPageParams {
+  id: string;
+}
+
+interface ApiResponse<T = any> {
+  success?: boolean;
+  data?: T;
+  error?: string;
+}
+
+interface EditFormData {
+  title: string;
+  description: string;
+  priority: Priority;
+  status: TaskStatus;
+  dueDate: string;
+  projectId?: string;
+  assignedTo?: string;
+  tags?: string[];
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -130,59 +158,103 @@ const STATUS_CONFIG: Record<
   },
 };
 
+// ─── Helper Functions ──────────────────────────────────────────────────────
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .slice(0, 2)
+    .map((n) => n[0] || "")
+    .join("")
+    .toUpperCase();
+}
+
+function isTaskOverdue(
+  dueDate: string | undefined,
+  status: TaskStatus,
+): boolean {
+  if (!dueDate) return false;
+  return status !== "done" && new Date(dueDate) < new Date();
+}
+
+function formatDate(date: string | Date): string {
+  return format(new Date(date), "PPP");
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function TaskDetailPage() {
-  const { id } = useParams();
+  const params = useParams();
   const router = useRouter();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
 
+  // ── State ──
   const [task, setTask] = useState<Task | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<Partial<Task>>({});
-  const [isSaving, setIsSaving] = useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState("details");
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editForm, setEditForm] = useState<Partial<EditFormData>>({});
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<string>("details");
+
+  // ── Derived State ──
+  const taskId = params?.id as string;
+  const userId = user?.id || "";
+
+  const canEdit =
+    task && (task.userId === userId || task.assignedTo === userId);
+
+  const subtasksDone =
+    task?.subtasks?.filter((s: SubTask) => s.done).length ?? 0;
+  const subtasksTotal = task?.subtasks?.length ?? 0;
+  const completionPercentage =
+    subtasksTotal > 0
+      ? Math.round((subtasksDone / subtasksTotal) * 100)
+      : task?.status === "done"
+        ? 100
+        : 0;
 
   // ─── Fetch Task ────────────────────────────────────────────────────────────
 
-  const fetchTask = useCallback(async () => {
-    if (!id) return;
+  const fetchTask = useCallback(async (): Promise<void> => {
+    if (!taskId) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/tasks/${id}`);
+      const res = await fetch(`/api/tasks/${taskId}`);
       if (!res.ok) {
-        const errorData = await res.json();
+        const errorData = (await res.json()) as ApiResponse;
         throw new Error(errorData.error || "Failed to fetch task");
       }
 
-      const data = await res.json();
-      setTask(data.data || data);
-      setEditForm(data.data || data);
+      const data = (await res.json()) as ApiResponse<Task>;
+      const taskData = data.data || data;
+      setTask(taskData as Task);
+      setEditForm(taskData as unknown as Partial<EditFormData>);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load task");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load task";
+      setError(errorMessage);
       toast.error("Failed to load task");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [taskId]);
 
   useEffect(() => {
-    if (id) {
+    if (taskId) {
       fetchTask();
     }
-  }, [id, fetchTask]);
+  }, [taskId, fetchTask]);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleToggleStatus = async () => {
-    if (!task) return;
+  const handleToggleStatus = async (): Promise<void> => {
+    if (!task || !task._id) return;
 
     try {
       const res = await fetch(`/api/tasks/${task._id}`, {
@@ -192,22 +264,22 @@ export default function TaskDetailPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = (await res.json()) as ApiResponse;
         throw new Error(err.error || "Failed to toggle status");
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiResponse<Task>;
       setTask(data.data || data);
       toast.success("Task status updated!");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to toggle status",
-      );
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to toggle status";
+      toast.error(errorMessage);
     }
   };
 
-  const handleUpdateTask = async () => {
-    if (!task || !editForm) return;
+  const handleUpdateTask = async (): Promise<void> => {
+    if (!task || !task._id || !editForm) return;
 
     setIsSaving(true);
 
@@ -219,23 +291,25 @@ export default function TaskDetailPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = (await res.json()) as ApiResponse;
         throw new Error(err.error || "Failed to update task");
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiResponse<Task>;
       setTask(data.data || data);
       setIsEditing(false);
       toast.success("Task updated successfully!");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update task");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to update task";
+      toast.error(errorMessage);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteTask = async () => {
-    if (!task) return;
+  const handleDeleteTask = async (): Promise<void> => {
+    if (!task || !task._id) return;
 
     setIsDeleting(true);
 
@@ -245,21 +319,23 @@ export default function TaskDetailPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = (await res.json()) as ApiResponse;
         throw new Error(err.error || "Failed to delete task");
       }
 
       toast.success("Task deleted successfully!");
       router.push("/dashboard/tasks");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete task");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to delete task";
+      toast.error(errorMessage);
     } finally {
       setIsDeleting(false);
       setDeleteModalOpen(false);
     }
   };
 
-  const handleDuplicate = async () => {
+  const handleDuplicate = async (): Promise<void> => {
     if (!task) return;
 
     try {
@@ -271,28 +347,28 @@ export default function TaskDetailPage() {
         body: JSON.stringify({
           ...taskCopy,
           title: `${task.title} (Copy)`,
-          status: "todo",
+          status: "todo" as TaskStatus,
           isArchived: false,
         }),
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = (await res.json()) as ApiResponse;
         throw new Error(err.error || "Failed to duplicate task");
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiResponse<Task>;
       toast.success("Task duplicated successfully!");
-      router.push(`/dashboard/tasks/${data.data._id}`);
+      router.push(`/dashboard/tasks/${data.data?._id}`);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to duplicate task",
-      );
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to duplicate task";
+      toast.error(errorMessage);
     }
   };
 
-  const handleArchive = async () => {
-    if (!task) return;
+  const handleArchive = async (): Promise<void> => {
+    if (!task || !task._id) return;
 
     try {
       const res = await fetch(`/api/tasks/${task._id}`, {
@@ -302,17 +378,17 @@ export default function TaskDetailPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = (await res.json()) as ApiResponse;
         throw new Error(err.error || "Failed to archive task");
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiResponse<Task>;
       setTask(data.data || data);
       toast.success("Task archived successfully!");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to archive task",
-      );
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to archive task";
+      toast.error(errorMessage);
     }
   };
 
@@ -345,14 +421,7 @@ export default function TaskDetailPage() {
   }
 
   const StatusIcon = STATUS_CONFIG[task.status]?.icon || Circle;
-  const subtasksDone = task.subtasks?.filter((s) => s.done).length ?? 0;
-  const subtasksTotal = task.subtasks?.length ?? 0;
-  const completionPercentage =
-    subtasksTotal > 0
-      ? Math.round((subtasksDone / subtasksTotal) * 100)
-      : task.status === "done"
-        ? 100
-        : 0;
+  const isOverdue = isTaskOverdue(task.dueDate, task.status);
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -372,16 +441,28 @@ export default function TaskDetailPage() {
           </Button>
           <Separator orientation="vertical" className="h-6" />
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleToggleStatus}
-              className="text-muted-foreground hover:text-violet-500 transition-colors"
-            >
-              {task.status === "done" ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-              ) : (
-                <Circle className="w-5 h-5" />
-              )}
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleToggleStatus}
+                className="text-muted-foreground hover:text-violet-500 transition-colors"
+                aria-label="Toggle task status"
+              >
+                {task.status === "done" ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                ) : (
+                  <Circle className="w-5 h-5" />
+                )}
+              </button>
+            )}
+            {!canEdit && (
+              <div className="text-muted-foreground">
+                {task.status === "done" ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                ) : (
+                  <Circle className="w-5 h-5" />
+                )}
+              </div>
+            )}
             <h1 className="text-lg font-semibold truncate">{task.title}</h1>
             <Badge
               className={cn("text-[10px]", STATUS_CONFIG[task.status].badge)}
@@ -392,43 +473,47 @@ export default function TaskDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsEditing(true)}
-            className="gap-2"
-          >
-            <Edit2 className="w-4 h-4" />
-            Edit
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreVertical className="w-4 h-4" />
+          {canEdit && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsEditing(true)}
+                className="gap-2"
+              >
+                <Edit2 className="w-4 h-4" />
+                Edit
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={handleDuplicate}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" /> Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleArchive}
-                className="text-xs gap-2 cursor-pointer"
-              >
-                <Archive className="w-3.5 h-3.5" /> Archive
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setDeleteModalOpen(true)}
-                className="text-xs gap-2 text-destructive cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem
+                    onClick={handleDuplicate}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleArchive}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Archive className="w-3.5 h-3.5" /> Archive
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setDeleteModalOpen(true)}
+                    className="text-xs gap-2 text-destructive cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </header>
 
@@ -448,7 +533,7 @@ export default function TaskDetailPage() {
               <TabsTrigger value="comments" className="gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Comments
-                {task.commentCount > 0 && (
+                {task.commentCount && task.commentCount > 0 && (
                   <Badge variant="secondary" className="text-[10px]">
                     {task.commentCount}
                   </Badge>
@@ -506,9 +591,9 @@ export default function TaskDetailPage() {
                     {task.dueDate ? (
                       <div className="flex items-center gap-2">
                         <span className="text-sm">
-                          {format(new Date(task.dueDate), "PPP")}
+                          {formatDate(task.dueDate)}
                         </span>
-                        {isOverdue(task.dueDate, task.status) && (
+                        {isOverdue && (
                           <Badge variant="destructive" className="text-[10px]">
                             Overdue
                           </Badge>
@@ -534,11 +619,19 @@ export default function TaskDetailPage() {
                     {task.assignedTo ? (
                       <div className="flex items-center gap-2">
                         <Avatar className="w-6 h-6">
+                          {task.assigneeAvatar ? (
+                            <AvatarImage
+                              src={task.assigneeAvatar}
+                              alt={task.assignedTo}
+                            />
+                          ) : null}
                           <AvatarFallback className="text-[10px] bg-violet-100 text-violet-700">
                             {getInitials(task.assignedTo)}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="text-sm">{task.assignedTo}</span>
+                        <span className="text-sm">
+                          {task.assignedByName || task.assignedTo}
+                        </span>
                       </div>
                     ) : (
                       <span className="text-sm text-muted-foreground">
@@ -578,7 +671,7 @@ export default function TaskDetailPage() {
                   <CardContent>
                     {task.tags && task.tags.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {task.tags.map((tag) => (
+                        {task.tags.map((tag: string) => (
                           <Badge
                             key={tag}
                             variant="secondary"
@@ -616,28 +709,30 @@ export default function TaskDetailPage() {
                         className="h-1.5 mb-3"
                       />
                       <div className="space-y-1.5">
-                        {task.subtasks?.map((subtask, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted/30"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={subtask.done}
-                              readOnly
-                              className="w-3.5 h-3.5 rounded accent-violet-500"
-                            />
-                            <span
-                              className={cn(
-                                "text-sm",
-                                subtask.done &&
-                                  "line-through text-muted-foreground",
-                              )}
+                        {task.subtasks?.map(
+                          (subtask: SubTask, index: number) => (
+                            <div
+                              key={subtask._id?.toString() || index}
+                              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted/30"
                             >
-                              {subtask.title}
-                            </span>
-                          </div>
-                        ))}
+                              <input
+                                type="checkbox"
+                                checked={subtask.done}
+                                readOnly
+                                className="w-3.5 h-3.5 rounded accent-violet-500"
+                              />
+                              <span
+                                className={cn(
+                                  "text-sm",
+                                  subtask.done &&
+                                    "line-through text-muted-foreground",
+                                )}
+                              >
+                                {subtask.title}
+                              </span>
+                            </div>
+                          ),
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -649,14 +744,13 @@ export default function TaskDetailPage() {
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <div className="flex items-center gap-4">
                         <span>
-                          Created: {format(new Date(task.createdAt), "PPP")}
+                          Created: {formatDate(task.createdAt || new Date())}
                         </span>
                         <span>•</span>
                         <span>
                           Updated:{" "}
-                          {format(
-                            new Date(task.updatedAt || task.createdAt),
-                            "PPP",
+                          {formatDate(
+                            task.updatedAt || task.createdAt || new Date(),
                           )}
                         </span>
                       </div>
@@ -670,7 +764,7 @@ export default function TaskDetailPage() {
             </TabsContent>
 
             <TabsContent value="comments">
-              <TaskComments taskId={task._id} taskTitle={task.title} />
+              <TaskComments taskId={task._id || ""} taskTitle={task.title} />
             </TabsContent>
           </Tabs>
         </div>
@@ -763,19 +857,4 @@ export default function TaskDetailPage() {
       />
     </div>
   );
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .slice(0, 2)
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
-}
-
-function isOverdue(dueDate: string, status: TaskStatus) {
-  return status !== "done" && new Date(dueDate) < new Date();
 }
