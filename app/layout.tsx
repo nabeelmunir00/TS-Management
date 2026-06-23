@@ -2,8 +2,10 @@ import { ClerkProvider } from "@clerk/nextjs";
 // import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { Geist, JetBrains_Mono } from "next/font/google";
 
 // const inter = Inter({ subsets: ["latin"] });
+const mono = JetBrains_Mono({ subsets: ["latin"] });
 
 export const metadata = {
   title: "Developer Hub - Task Management System",
@@ -18,7 +20,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body>
+        <body className={mono.className}>
           {children}
           <Toaster position={"top-right"} />
         </body>
