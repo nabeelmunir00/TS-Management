@@ -38,13 +38,11 @@ import {
   Download,
   Trash2,
   Plus,
-  ChevronRight,
   X,
   ZoomIn,
   ZoomOut,
   Maximize2,
   GitBranch,
-  Lock,
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -685,13 +683,20 @@ function Canvas() {
   function addNode(type: NodeType) {
     const config = getNodeConfig(type);
     const id = `node_${++nodeId.current}`;
-    const newNode: Node = {
-      id,
-      type: "custom",
-      position: { x: 250 + Math.random() * 200, y: 200 + Math.random() * 200 },
-      data: { type, label: config.label, description: "", tech: "" },
-    };
-    setNodes((nds) => [...nds, newNode]);
+    // Defer any impure/random operations into the state updater to avoid
+    // calling Math.random during render.
+    setNodes((nds) => {
+      const newNode: Node = {
+        id,
+        type: "custom",
+        position: {
+          x: 250 + Math.random() * 200,
+          y: 200 + Math.random() * 200,
+        },
+        data: { type, label: config.label, description: "", tech: "" },
+      };
+      return [...nds, newNode];
+    });
   }
 
   // ── Update node ──

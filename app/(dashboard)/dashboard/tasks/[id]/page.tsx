@@ -6,7 +6,6 @@ import { useUser } from "@clerk/nextjs";
 import {
   ArrowLeft,
   CalendarDays,
-  Clock3,
   User,
   Tag,
   FolderOpen,
@@ -21,10 +20,6 @@ import {
   Copy,
   Archive,
   Flame,
-  Users,
-  AtSign,
-  Link2,
-  Paperclip,
   FileText,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -74,10 +69,6 @@ import type {
 } from "@/components/TaskModel";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-
-interface TaskDetailPageParams {
-  id: string;
-}
 
 interface ApiResponse<T = any> {
   success?: boolean;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import {
   CheckSquare,
@@ -15,7 +15,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Flame,
-  Calendar,
   Target,
   Award,
   Activity,

@@ -138,7 +138,7 @@ const ProjectSchema = new Schema<IProject>(
       type: Date,
       required: false,
       validate: {
-        validator: function (value: Date) {
+        validator: function (this: any, value: Date) {
           if (!this.startDate || !value) return true;
           return value >= this.startDate;
         },

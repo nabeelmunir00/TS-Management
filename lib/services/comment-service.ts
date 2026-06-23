@@ -266,7 +266,7 @@ export async function addReaction(data: AddReactionInput) {
 
     // Check if user already reacted with this type
     const existingReactionIndex = comment.reactions.findIndex(
-      (r) => r.userId === data.userId && r.type === data.reaction,
+      (r: any) => r.userId === data.userId && r.type === data.reaction,
     );
 
     if (existingReactionIndex !== -1) {
