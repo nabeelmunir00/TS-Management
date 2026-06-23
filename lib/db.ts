@@ -7,16 +7,16 @@ if (!MONGODB_URI) {
 }
 
 declare global {
-  var mongoose: {
+  var mongooseGlobal: {
     conn: typeof mongoose | null;
     promise: Promise<typeof mongoose> | null;
   };
 }
 
-let cached = global.mongoose;
+let cached = global.mongooseGlobal;
 
 if (!cached) {
-  cached = global.mongoose = {
+  cached = global.mongooseGlobal = {
     conn: null,
     promise: null,
   };
