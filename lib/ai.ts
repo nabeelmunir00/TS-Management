@@ -1,37 +1,29 @@
 // lib/ai.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface AIGeneratedData {
   suggestedTags: string[];
   enhancedDescription: string;
   suggestedPriority: "high" | "medium" | "low";
-  suggestedSubtasks: { title: string; done: boolean }[];
+  suggestedSubtasks: { id: string; title: string; done: boolean }[];
 }
 
-// ─── Gemini Client (Singleton) ─────────────────────────────────────────────
+// ─── Gemini Client (Singleton) ────────────────────────────────────────────────
 
 let geminiInstance: GoogleGenerativeAI | null = null;
 
 function getGeminiClient(): GoogleGenerativeAI {
   if (!geminiInstance) {
     const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      console.error("❌ GEMINI_API_KEY is not set in environment variables");
-      throw new Error(
-        "Gemini API key is missing. Please add GEMINI_API_KEY to your .env.local file.",
-      );
-    }
-
+    if (!apiKey) throw new Error("GEMINI_API_KEY is not set in .env.local");
     geminiInstance = new GoogleGenerativeAI(apiKey);
   }
-
   return geminiInstance;
 }
 
-// ─── Main AI Function ──────────────────────────────────────────────────────
+// ─── Main AI Function ─────────────────────────────────────────────────────────
 
 export async function generateTaskData(
   title: string,
@@ -40,168 +32,144 @@ export async function generateTaskData(
   try {
     const genAI = getGeminiClient();
 
-    // Use gemini-pro model (fast & free)
     const model = genAI.getGenerativeModel({
-      model: "gemini-pro", // or "gemini-pro" for older version
+      model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 5000,
+        temperature: 0.7,
+        maxOutputTokens: 1024,
       },
     });
 
-    const prompt = `
-  You are an expert project management assistant.
-
-  Analyze the provided task and generate intelligent project suggestions.
-
-  Requirements:
-
-  1. suggestedTags
-    - Generate 3-5 highly relevant tags.
-    - Use lowercase only.
-    - Use hyphen-separated words.
-    - Tags should describe the task category, technology, domain, or objective.
-    - Avoid generic tags like "task", "project", or "work".
-
-  2. enhancedDescription
-    - Rewrite the task description professionally.
-    - Make it clear, actionable, and concise.
-    - Length: 1-5 sentences.
-    - If no description is provided, create a meaningful description based on the title.
-    - Do not repeat the title verbatim.
-
-  3. suggestedPriority
-    - "high" → urgent, deadline-driven, blocking, critical, or time-sensitive tasks.
-    - "medium" → important tasks with normal priority.
-    - "low" → optional, enhancement, research, or nice-to-have tasks.
-    - Return ONLY one of: "high", "medium", "low".
-
-  4. suggestedSubtasks
-    - Generate 2-4 practical subtasks.
-    - Each subtask must be a clear action item.
-    - Length: 3-6 words.
-    - Avoid vague items like "Do task" or "Complete work".
-    - Each subtask must have:
-      {
-        "title": "Subtask title",
-        "done": false
-      }
-
-  Task Information:
-
-  Title: "${title}"
-
-  ${description ? `Description: "${description}"` : "Description: Not provided"}
-
-  Output Rules:
-
-  - Return ONLY valid JSON.
-  - Do NOT use markdown.
-  - Do NOT include explanations.
-  - Do NOT wrap JSON in code blocks.
-  - Do NOT include comments.
-  - All fields are required.
-
-  Expected JSON format:
-
-  {
-    "suggestedTags": ["tag-1", "tag-2", "tag-3"],
-    "enhancedDescription": "Professional task description.",
-    "suggestedPriority": "medium",
-    "suggestedSubtasks": [
-      {
-        "title": "First action item",
-        "done": false
-      },
-      {
-        "title": "Second action item",
-        "done": false
-      }
-    ]
-  }
-  `;
+    const prompt = buildPrompt(title, description);
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
-    // Clean the response (remove markdown if any)
-    const cleanText = text
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
+    // ✅ Extract JSON from response — handles extra text/thinking output
+    const jsonStr = extractJSON(text);
 
-    // Parse JSON
-    const parsed = JSON.parse(cleanText);
+    const parsed = JSON.parse(jsonStr);
 
     return {
-      suggestedTags: parsed.suggestedTags || [],
-      enhancedDescription: parsed.enhancedDescription || description || title,
-      suggestedPriority: parsed.suggestedPriority || "medium",
-      suggestedSubtasks: parsed.suggestedSubtasks || [],
+      suggestedTags: Array.isArray(parsed.suggestedTags)
+        ? parsed.suggestedTags
+        : [],
+      enhancedDescription:
+        typeof parsed.enhancedDescription === "string"
+          ? parsed.enhancedDescription
+          : description || title,
+      suggestedPriority: ["high", "medium", "low"].includes(
+        parsed.suggestedPriority,
+      )
+        ? parsed.suggestedPriority
+        : "medium",
+      suggestedSubtasks: Array.isArray(parsed.suggestedSubtasks)
+        ? parsed.suggestedSubtasks.map((s: any, i: number) => ({
+            id: s.id || `ai-${Date.now()}-${i}`,
+            title: s.title || "",
+            done: false,
+          }))
+        : [],
     };
   } catch (error) {
     console.error("❌ Gemini generation error:", error);
-
-    // ── Intelligent Fallback ──
     return generateFallbackData(title, description);
   }
 }
 
-// ─── Fallback (No API needed) ─────────────────────────────────────────────
+// ─── JSON Extractor ───────────────────────────────────────────────────────────
+/**
+ * Robustly extract JSON from Gemini response.
+ * Handles: markdown fences, thinking text before JSON, trailing text.
+ */
+function extractJSON(text: string): string {
+  // 1. Remove markdown code fences
+  let cleaned = text
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  // 2. Find the first { and last } — extract just the JSON object
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("No valid JSON object found in AI response");
+  }
+
+  return cleaned.slice(start, end + 1);
+}
+
+// ─── Prompt Builder ───────────────────────────────────────────────────────────
+
+function buildPrompt(title: string, description?: string): string {
+  const hasDescription = description && description.trim().length > 0;
+
+  // ✅ Shorter, more focused prompt — less output = no truncation
+  return `You are a senior software engineering project manager.
+Analyze this development task and return ONLY a JSON object. No explanation, no markdown, no extra text.
+
+Task Title: "${title}"
+${hasDescription ? `User Description: "${description}"` : "Description: none provided"}
+
+Return this exact JSON structure:
+{
+  "enhancedDescription": "3-4 sentence professional description explaining WHY this task is needed, WHAT technical work is involved, and WHAT the expected outcome is. Do NOT copy the title. Write specific technical details.",
+  "suggestedPriority": "high|medium|low",
+  "suggestedTags": ["tag-1", "tag-2", "tag-3"],
+  "suggestedSubtasks": [
+    { "id": "1", "title": "Specific action item", "done": false },
+    { "id": "2", "title": "Specific action item", "done": false },
+    { "id": "3", "title": "Specific action item", "done": false }
+  ]
+}
+
+Rules:
+- enhancedDescription: min 3 sentences, technical, do NOT start with the title
+- suggestedPriority: high=urgent/blocking, medium=planned, low=optional
+- suggestedTags: 3-4 lowercase hyphen-separated specific tags
+- suggestedSubtasks: exactly 3 concrete action items`;
+}
+
+// ─── Fallback ─────────────────────────────────────────────────────────────────
 
 function generateFallbackData(
   title: string,
   description?: string,
 ): AIGeneratedData {
-  // Generate tags from title
   const words = title.toLowerCase().split(" ");
+
   const tags = words
-    .filter((w) => w.length > 2)
+    .filter((w) => w.length > 3)
     .map((w) => w.replace(/[^a-z0-9]/g, "-"))
     .slice(0, 4);
 
-  // Generate subtasks
-  const subtaskTemplates = [
-    `Plan ${title} implementation`,
-    `Set up required tools and dependencies`,
-    `Implement ${title} core functionality`,
-    `Test and document ${title}`,
-    `Review and optimize ${title}`,
-    `Deploy ${title} to production`,
-  ];
-
-  const subtasks = subtaskTemplates
-    .slice(0, 3 + Math.floor(Math.random() * 2))
-    .map((sub, i) => ({
-      id: `fallback-${Date.now()}-${i}`,
-      title: sub,
-      done: false,
-    }));
-
-  // Determine priority based on keywords
-  const priority = title.match(
-    /urgent|critical|important|deadline|asap|fix|bug|issue/i,
+  const priority: "high" | "medium" | "low" = title.match(
+    /urgent|critical|fix|bug|issue|error|crash|security|hotfix|asap|deadline/i,
   )
     ? "high"
-    : title.match(/optimize|improve|enhance|refactor|update/i)
+    : title.match(/improve|optimize|refactor|enhance|update|upgrade/i)
       ? "medium"
       : "low";
 
-  // Generate description if missing
-  const descriptions = [
-    `Comprehensive implementation of ${title} with best practices.`,
-    `Complete ${title} solution following project requirements.`,
-    `Full-stack implementation of ${title} with proper testing.`,
-    `End-to-end ${title} development with documentation and examples.`,
-  ];
+  const enhancedDescription =
+    description && description.trim().length > 10
+      ? description
+      : `This task involves implementing ${title.toLowerCase()} following established engineering best practices. The work includes designing the solution architecture, implementing the core functionality with proper error handling and edge case coverage, writing unit and integration tests to ensure reliability, and documenting the implementation for the team. The expected outcome is a production-ready feature that is well-tested, maintainable, and aligns with the project's technical standards.`;
 
   return {
-    suggestedTags: tags.length > 0 ? tags : ["task", "implementation"],
-    enhancedDescription:
-      description ||
-      descriptions[Math.floor(Math.random() * descriptions.length)],
+    suggestedTags: tags.length > 0 ? tags : ["development", "implementation"],
+    enhancedDescription,
     suggestedPriority: priority,
-    suggestedSubtasks: subtasks,
+    suggestedSubtasks: [
+      {
+        id: "f-1",
+        title: `Research and plan ${title.toLowerCase()}`,
+        done: false,
+      },
+      { id: "f-2", title: "Implement core functionality", done: false },
+      { id: "f-3", title: "Write tests and review code", done: false },
+    ],
   };
 }

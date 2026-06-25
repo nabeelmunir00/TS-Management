@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     // 🟢 Updated to Gemini Pro with Native JSON response configuration
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.2, // Lower temperature makes structural layout data more predictable
         maxOutputTokens: 4000,
