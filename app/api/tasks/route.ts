@@ -7,7 +7,7 @@ import {
   bulkDeleteTasks,
   bulkUpdateStatus,
   getRecentTasks,
-} from "@/lib/services/tast-services";
+} from "@/lib/services/task-services";
 import { auth } from "@clerk/nextjs/server";
 import { TaskStatus } from "@/lib/models/Task";
 import { RateLimiter } from "@/lib/rate-limiter";
