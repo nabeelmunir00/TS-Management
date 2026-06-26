@@ -8,6 +8,10 @@ import { cache } from "react";
 import { v4 as uuidv4 } from "uuid";
 import TeamMember from "../models/TeamMember";
 import "../models/Organization"; // ✅ Register Organization schema
+import {
+  sendTaskAssignedEmail,
+  sendTaskCompletedEmail,
+} from "@/lib/email/email-helper";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,6 +34,7 @@ export interface CreateTaskInput {
   attachments?: { name: string; url: string; type: string }[];
   aiSuggestions?: string;
   isArchived?: boolean;
+  projectName?: string;
 }
 
 export interface UpdateTaskInput extends Partial<CreateTaskInput> {
@@ -165,6 +170,7 @@ export async function createTask(data: CreateTaskInput) {
       attachments: data.attachments || [],
       aiSuggestions: data.aiSuggestions,
       isArchived: data.isArchived || false,
+      projectName: data.projectName || "No Project",
     };
 
     const task = await TaskModel.create(taskData);
@@ -176,6 +182,26 @@ export async function createTask(data: CreateTaskInput) {
       if (taskData.status === "done") {
         await ProjectModel.updateTaskCounts(projectId, "taskCompleted");
       }
+    }
+    if (taskData.assignedTo && taskData.assignedTo !== data.userId) {
+      // Get assignee details from Clerk or TeamMember model
+      const assignee = await TeamMember.findOne({
+        userId: taskData.assignedTo,
+      });
+
+      await sendTaskAssignedEmail({
+        userId: taskData.assignedTo,
+        to: assignee?.email || taskData.assignedTo,
+        taskTitle: taskData.title,
+        projectName: taskData?.projectName || "No Project",
+        dueDate: taskData.dueDate
+          ? new Date(taskData.dueDate).toLocaleDateString()
+          : "No date",
+        priority: taskData.priority,
+        assignedByName: data.assignedByName || "Someone",
+        taskId: task._id.toString(),
+        assigneeName: assignee?.name || taskData.assignedTo,
+      });
     }
 
     await logActivity(data.userId, "create", "task", task._id, task.title);

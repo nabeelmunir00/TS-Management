@@ -6,7 +6,7 @@ import {
   deleteTask,
   toggleTaskStatus,
   archiveTask,
-} from "@/lib/services/tast-services";
+} from "@/lib/services/task-services";
 import { auth } from "@clerk/nextjs/server";
 
 // ─── GET: Get Single Task ──────────────────────────────────────────────────
