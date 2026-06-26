@@ -111,6 +111,7 @@ export async function sendCommentAddedEmail(data: {
   commenterName: string;
   comment: string;
   taskId: string;
+  recipientName: string;
 }): Promise<void> {
   const html = buildCommentAddedTemplate(data);
   await sendAndLogEmail(
