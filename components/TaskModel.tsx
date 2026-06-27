@@ -77,6 +77,7 @@ export interface Task {
   title: string;
   description?: string;
   projectId?: string;
+  projectName?: string;
   project?: {
     _id: string;
     name: string;
@@ -89,6 +90,7 @@ export interface Task {
   actualHours?: number;
   assignedTo?: string;
   assignedByName?: string;
+  assignedToName?: string;
   assignedToAvatar?: string;
   assigneeAvatar?: string;
   tags?: string[];
@@ -145,7 +147,7 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", color: "bg-emerald-100 text-emerald-600" },
 ];
 
-// ─── Team Members (Mock - Replace with actual API) ──────────────────────
+// ─── Team Members ──────────────────────────────────────────────────────────
 
 interface TeamMember {
   id: string;
@@ -170,6 +172,7 @@ export function TaskFormModal({
     title: "",
     description: "",
     projectId: "",
+    projectName: "",
     priority: "medium",
     status: "todo",
     dueDate: "",
@@ -240,7 +243,6 @@ export function TaskFormModal({
       setLoadingMembers(true);
       // Get organization ID from localStorage or context
       const orgId = localStorage.getItem("currentOrganizationId");
-      // const orgId = "6a366d73c16ded7cca83962e";
       if (!orgId) {
         setTeamMembers([]);
         return;
@@ -287,6 +289,7 @@ export function TaskFormModal({
           title: task.title || "",
           description: task.description || "",
           projectId: task.projectId || task.project?._id || "",
+          projectName: task.projectName || task.project?.name || "",
           priority: task.priority || "medium",
           status: task.status || "todo",
           dueDate: task.dueDate || "",
@@ -294,6 +297,7 @@ export function TaskFormModal({
           actualHours: task.actualHours,
           assignedTo: task.assignedTo || "",
           assignedByName: task.assignedByName || "",
+          assignedToName: task.assignedToName || "",
           assignedToAvatar: task.assignedToAvatar || task.assigneeAvatar || "",
           tags: task.tags || [],
           subtasks: task.subtasks || [],
@@ -307,6 +311,7 @@ export function TaskFormModal({
           title: "",
           description: "",
           projectId: "",
+          projectName: "",
           priority: "medium",
           status: "todo",
           dueDate: "",
@@ -500,12 +505,14 @@ export function TaskFormModal({
         title: form.title.trim(),
         description: form.description?.trim() || "",
         projectId: form.projectId || undefined,
+        projectName: form.projectName || "",
         status: form.status || "todo",
         priority: form.priority || "medium",
         tags: form.tags || [],
         subtasks: form.subtasks || [],
         attachments: form.attachments || [],
         assignedTo: form.assignedTo || undefined,
+        assignedToName: "",
         assignedByName: form.assignedByName || undefined,
         assignedToAvatar: form.assignedToAvatar || undefined,
       };
@@ -754,7 +761,14 @@ export function TaskFormModal({
                   <Label className="text-xs font-medium">Project</Label>
                   <Select
                     value={form.projectId || ""}
-                    onValueChange={(v) => setForm({ ...form, projectId: v })}
+                    onValueChange={(v) => {
+                      const selectedProject = projects.find((p) => p._id === v);
+                      setForm({
+                        ...form,
+                        projectId: v,
+                        projectName: selectedProject?.name || "",
+                      });
+                    }}
                     disabled={loadingProjects}
                   >
                     <SelectTrigger className="text-sm h-10 rounded-lg border-muted-foreground/20">
@@ -871,7 +885,7 @@ export function TaskFormModal({
                 </div>
               </div>
 
-              {/* ── Assignee (Updated with Team Members) ── */}
+              {/* ── Assignee ── */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium flex items-center gap-1">
                   <Users className="w-3 h-3" /> Assignee
