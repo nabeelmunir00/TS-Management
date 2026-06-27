@@ -646,8 +646,8 @@ export default function TaskDetailPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {task.project?.name ? (
-                      <span className="text-sm">{task.project.name}</span>
+                    {task.projectName ? (
+                      <span className="text-sm">{task.projectName}</span>
                     ) : (
                       <span className="text-sm text-muted-foreground">
                         No project
