@@ -11,6 +11,7 @@ import {
 import { auth } from "@clerk/nextjs/server";
 import { TaskStatus } from "@/lib/models/Task";
 import { RateLimiter } from "@/lib/rate-limiter";
+import { getCurrentUser } from "@/lib/currentUser";
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -192,10 +193,11 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-
+    const currentUser = await getCurrentUser();
     // ✅ Create task
     const result = await createTask({
       ...body,
+      assignedToName: currentUser?.fullName || "",
       userId,
     });
 

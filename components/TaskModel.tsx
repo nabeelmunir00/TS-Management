@@ -89,6 +89,7 @@ export interface Task {
   actualHours?: number;
   assignedTo?: string;
   assignedByName?: string;
+  assignedToName?: string;
   assignedToAvatar?: string;
   assigneeAvatar?: string;
   tags?: string[];
@@ -294,6 +295,7 @@ export function TaskFormModal({
           actualHours: task.actualHours,
           assignedTo: task.assignedTo || "",
           assignedByName: task.assignedByName || "",
+          assignedToName: task.assignedToName || "",
           assignedToAvatar: task.assignedToAvatar || task.assigneeAvatar || "",
           tags: task.tags || [],
           subtasks: task.subtasks || [],
@@ -506,6 +508,7 @@ export function TaskFormModal({
         subtasks: form.subtasks || [],
         attachments: form.attachments || [],
         assignedTo: form.assignedTo || undefined,
+        assignedToName: "",
         assignedByName: form.assignedByName || undefined,
         assignedToAvatar: form.assignedToAvatar || undefined,
       };

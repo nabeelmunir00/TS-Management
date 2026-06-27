@@ -38,7 +38,7 @@ export interface ITask extends Document {
   assignedToAvatar?: string;
   assignedAt?: Date;
   assignedBy?: string;
-
+  assignedToName?: string;
   tags: string[];
   subtasks: ISubtask[];
   attachments: IAttachment[];
@@ -136,6 +136,10 @@ const TaskSchema = new Schema<ITask>(
       index: true,
     },
     assignedByName: {
+      type: String,
+      required: false,
+    },
+    assignedToName: {
       type: String,
       required: false,
     },

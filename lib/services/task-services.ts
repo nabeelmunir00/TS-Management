@@ -27,6 +27,7 @@ export interface CreateTaskInput {
   actualHours?: number;
   assignedTo?: string; // clerk userId of assignee
   assignedByName?: string; // display name
+  assignedToName?: string;
   assignedToAvatar?: string; // avatar url
   assignedBy?: string; // clerk userId of assigner
   tags?: string[];
@@ -158,6 +159,7 @@ export async function createTask(data: CreateTaskInput) {
       // ✅ Assignment fields
       assignedTo: data.assignedTo || undefined,
       assignedByName: data.assignedByName || undefined,
+      assignedToName: data.assignedToName || undefined,
       assignedToAvatar: data.assignedToAvatar || undefined,
       assignedBy: data.assignedBy || data.userId,
       assignedAt: data.assignedTo ? new Date() : undefined,
@@ -191,16 +193,16 @@ export async function createTask(data: CreateTaskInput) {
 
       await sendTaskAssignedEmail({
         userId: taskData.assignedTo,
-        to: assignee?.email || taskData.assignedTo,
+        to: assignee?.email || taskData.assignedByName,
         taskTitle: taskData.title,
         projectName: taskData?.projectName || "No Project",
         dueDate: taskData.dueDate
           ? new Date(taskData.dueDate).toLocaleDateString()
           : "No date",
         priority: taskData.priority,
-        assignedByName: data.assignedByName || "Someone",
+        assignedByName: data.assignedToName || "Someone",
         taskId: task._id.toString(),
-        assigneeName: assignee?.name || taskData.assignedTo,
+        assigneeName: assignee?.name || taskData.assignedByName,
       });
     }
 
