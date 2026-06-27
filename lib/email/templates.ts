@@ -18,10 +18,10 @@ const T = {
   divider: "#1E1E2E", // divider
   white: "#FFFFFF",
 
-  // Priority colors
+  // ✅ Priority colors (fixed)
   urgent: { bg: "#2D0A0A", text: "#F87171", border: "#7F1D1D" },
   high: { bg: "#1F1100", text: "#FB923C", border: "#7C2D12" },
-  medium: { bg: "#1C1700", text: "#FCD34D", border: "#78350F" },
+  medium: { bg: "#1C1700", text: "#FCD34D", border: "#78350F" }, // ✅ Fixed
   low: { bg: "#0A1F14", text: "#4ADE80", border: "#14532D" },
 };
 
@@ -34,7 +34,6 @@ function shell(body: string, subject: string): string {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>${subject}</title>
-<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:${T.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;}
@@ -305,6 +304,7 @@ export function buildTeamInviteTemplate(data: {
   inviteLink: string;
   role: string;
   expiresAt?: string;
+  email?: string;
 }): string {
   const roleLabel = data.role.charAt(0).toUpperCase() + data.role.slice(1);
 
@@ -326,6 +326,23 @@ export function buildTeamInviteTemplate(data: {
         </td>
       </tr>
     </table>
+
+    ${
+      data.email
+        ? `
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+           style="background:#1A1A2E;border:1px solid #2D2D4A;border-radius:8px;margin:16px 0;">
+      <tr>
+        <td style="padding:12px 16px;">
+          <p style="font-size:12px;color:${T.textMuted};margin:0;">
+            📧 Invitation sent to: <strong style="color:${T.textSub};">${data.email}</strong>
+          </p>
+        </td>
+      </tr>
+    </table>
+    `
+        : ""
+    }
 
     <!-- Feature list -->
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin:20px 0;">
