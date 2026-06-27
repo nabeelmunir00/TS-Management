@@ -551,7 +551,7 @@ export function TaskFormModal({
     }
   };
 
-  const isValid = form.title?.trim().length > 0;
+  const isValid = !!form?.title?.trim().length;
 
   // ── Render ──
 
