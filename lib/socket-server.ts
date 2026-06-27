@@ -1,7 +1,6 @@
 // lib/socket-server.ts
 import { Server as SocketServer } from "socket.io";
 import { Server as HttpServer } from "http";
-import { parse } from "url";
 import { auth } from "@clerk/nextjs/server";
 import connectDB from "@/lib/db";
 import Comment from "@/lib/models/Comment";
@@ -56,9 +55,9 @@ export function initSocketServer(server: HttpServer) {
       // ✅ Attach user to socket
       const currentUser = await getCurrentUser();
       socket.data.userId = userId;
-      socket.data.email = currentUser?.user?.emailAddresses?.[0]?.emailAddress;
+      socket.data.email = currentUser?.emailAddresses?.[0]?.emailAddress;
       socket.data.userName =
-        currentUser.user?.fullName || session.user?.firstName || "User";
+        currentUser?.fullName || currentUser?.firstName || "User";
 
       next();
     } catch (error) {
@@ -137,17 +136,19 @@ export function initSocketServer(server: HttpServer) {
           const populatedComment = await Comment.findById(comment._id).lean();
 
           // ✅ Broadcast to all users in the task room
-          io.to(`task-${data.taskId}`).emit("comment-added", {
-            comment: {
-              ...populatedComment,
-              _id: comment._id,
-              createdAt: comment.createdAt,
-            },
-          });
+          if (io) {
+            io.to(`task-${data.taskId}`).emit("comment-added", {
+              comment: {
+                ...populatedComment,
+                _id: comment._id,
+                createdAt: comment.createdAt,
+              },
+            });
 
-          console.log(
-            `💬 ${socket.data.userName} commented on task ${data.taskId}`,
-          );
+            console.log(
+              `💬 ${socket.data.userName} commented on task ${data.taskId}`,
+            );
+          }
         } catch (error) {
           console.error("❌ New comment error:", error);
           socket.emit("error", {
@@ -182,11 +183,13 @@ export function initSocketServer(server: HttpServer) {
           await comment.save();
 
           // ✅ Broadcast update
-          io.to(`task-${comment.taskId.toString()}`).emit("comment-edited", {
-            commentId: data.commentId,
-            content: data.content.trim(),
-            editedAt: new Date().toISOString(),
-          });
+          if (io) {
+            io.to(`task-${comment.taskId.toString()}`).emit("comment-edited", {
+              commentId: data.commentId,
+              content: data.content.trim(),
+              editedAt: new Date().toISOString(),
+            });
+          }
         } catch (error) {
           console.error("❌ Edit comment error:", error);
           socket.emit("error", { message: "Failed to edit comment" });
@@ -222,9 +225,11 @@ export function initSocketServer(server: HttpServer) {
         });
 
         // ✅ Broadcast deletion
-        io.to(`task-${comment.taskId.toString()}`).emit("comment-deleted", {
-          commentId: data.commentId,
-        });
+        if (io) {
+          io.to(`task-${comment.taskId.toString()}`).emit("comment-deleted", {
+            commentId: data.commentId,
+          });
+        }
       } catch (error) {
         console.error("❌ Delete comment error:", error);
         socket.emit("error", { message: "Failed to delete comment" });
@@ -262,10 +267,15 @@ export function initSocketServer(server: HttpServer) {
           await comment.save();
 
           // ✅ Broadcast reaction update
-          io.to(`task-${comment.taskId.toString()}`).emit("reaction-updated", {
-            commentId: data.commentId,
-            reactions: comment.reactions,
-          });
+          if (io) {
+            io.to(`task-${comment.taskId.toString()}`).emit(
+              "reaction-updated",
+              {
+                commentId: data.commentId,
+                reactions: comment.reactions,
+              },
+            );
+          }
         } catch (error) {
           console.error("❌ Reaction error:", error);
           socket.emit("error", { message: "Failed to add reaction" });
