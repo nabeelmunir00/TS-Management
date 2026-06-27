@@ -836,7 +836,6 @@ export function TaskFormModal({
                           });
                           setDatePickerOpen(false);
                         }}
-                        initialFocus
                       />
                     </PopoverContent>
                   </Popover>
