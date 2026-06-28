@@ -40,7 +40,7 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
       try {
         const res = await fetch(`/api/tasks/${taskId}/comments`);
         const data = await res.json();
-        if (data.success) setComments(data.data);
+        if (data.success) setComments(data.data?.reverse());
       } catch (err) {
         console.error("Failed to fetch comments:", err);
       } finally {
