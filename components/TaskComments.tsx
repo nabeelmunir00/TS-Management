@@ -1,635 +1,353 @@
+// components/TaskComments.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import {
-  MessageSquare,
-  Send,
-  Edit,
-  Trash2,
-  ThumbsUp,
-  Heart,
-  Laugh,
-  Sandwich,
-  Angry,
-  MoreVertical,
-  User,
-  AtSign,
-  Loader2,
-  Reply,
-  X,
-} from "lucide-react";
-import { format } from "date-fns";
-import { toast } from "sonner";
-
+import { useSocket } from "@/hooks/useSocket";
+import type { Comment } from "@/types/socket";
+import { formatDistanceToNow } from "date-fns";
+import { Send, Trash2, Loader2, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-interface Comment {
-  _id: string;
-  taskId: string;
-  userId: string;
-  email: string;
-  userName: string;
-  avatar?: string;
-  content: string;
-  parentId?: string;
-  mentions: string[];
-  reactions: {
-    type: "like" | "heart" | "laugh" | "sad" | "angry";
-    userId: string;
-  }[];
-  edited: boolean;
-  isDeleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-  replies?: Comment[];
-}
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface TaskCommentsProps {
   taskId: string;
-  taskTitle?: string;
 }
 
-// ─── Reaction Icons ─────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 
-const REACTION_ICONS = {
-  like: ThumbsUp,
-  heart: Heart,
-  laugh: Laugh,
-  sad: Sandwich,
-  angry: Angry,
-};
+export function TaskComments({ taskId }: TaskCommentsProps) {
+  const { user } = useUser();
+  const socket = useSocket();
 
-const REACTION_EMOJIS = {
-  like: "👍",
-  heart: "❤️",
-  laugh: "😂",
-  sad: "😢",
-  angry: "😡",
-};
-
-const REACTION_COLORS = {
-  like: "text-blue-500",
-  heart: "text-red-500",
-  laugh: "text-yellow-500",
-  sad: "text-indigo-500",
-  angry: "text-orange-500",
-};
-
-// ─── Helper Functions ──────────────────────────────────────────────────────
-
-function getUserInitials(user: any): string {
-  if (!user) return "?";
-
-  if (user.fullName) {
-    const names = user.fullName.split(" ");
-    if (names.length >= 2) {
-      return `${names[0][0]}${names[1][0]}`.toUpperCase();
-    }
-    return user.fullName.slice(0, 2).toUpperCase();
-  }
-
-  if (user.firstName) {
-    return user.firstName.slice(0, 2).toUpperCase();
-  }
-
-  if (user.username) {
-    return user.username.slice(0, 2).toUpperCase();
-  }
-
-  if (user.emailAddresses && user.emailAddresses.length > 0) {
-    return user.emailAddresses[0].emailAddress.slice(0, 2).toUpperCase();
-  }
-
-  return "?";
-}
-
-function getUserDisplayName(user: any): string {
-  if (!user) return "User";
-
-  if (user.fullName) return user.fullName;
-  if (user.firstName) return user.firstName;
-  if (user.username) return user.username;
-  if (user.emailAddresses && user.emailAddresses.length > 0) {
-    return user.emailAddresses[0].emailAddress.split("@")[0];
-  }
-  return "User";
-}
-
-function getUserEmail(user: any): string {
-  if (!user) return "";
-  if (user.emailAddresses && user.emailAddresses.length > 0) {
-    return user.emailAddresses[0].emailAddress;
-  }
-  return "";
-}
-
-function getUserAvatar(user: any): string {
-  if (!user) return "";
-  return user.imageUrl || "";
-}
-
-// ─── Comment Item ──────────────────────────────────────────────────────────
-
-function CommentItem({
-  comment,
-  taskId,
-  onReply,
-  onEdit,
-  onDelete,
-  onReaction,
-  currentUserId,
-}: {
-  comment: Comment;
-  taskId: string;
-  onReply: (comment: Comment) => void;
-  onEdit: (comment: Comment, newContent: string) => void;
-  onDelete: (commentId: string) => void;
-  onReaction: (commentId: string, reaction: string) => void;
-  currentUserId: string;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(comment.content);
-  const [showReplies, setShowReplies] = useState(true);
-  const isOwner = comment.userId === currentUserId;
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .slice(0, 2)
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  const handleEdit = () => {
-    if (editContent.trim() && editContent !== comment.content) {
-      onEdit(comment, editContent);
-    }
-    setIsEditing(false);
-  };
-
-  const handleReaction = (reaction: string) => {
-    onReaction(comment._id, reaction);
-  };
-
-  const getReactionCount = (type: string) => {
-    return comment.reactions.filter((r) => r.type === type).length;
-  };
-
-  const hasUserReacted = (type: string) => {
-    return comment.reactions.some(
-      (r) => r.type === type && r.userId === currentUserId,
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-3">
-        {/* Avatar */}
-        <Avatar className="w-8 h-8 shrink-0">
-          {comment.avatar ? (
-            <AvatarImage src={comment.avatar} alt={comment.userName} />
-          ) : null}
-          <AvatarFallback className="bg-violet-100 text-violet-700 text-xs">
-            {getInitials(comment.userName || comment.email || "User")}
-          </AvatarFallback>
-        </Avatar>
-
-        <div className="flex-1 min-w-0">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-medium">
-                {comment.userId === currentUserId
-                  ? "You"
-                  : comment.userName || comment.email}
-              </p>
-              <p className="text-[10px] text-muted-foreground">
-                {format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                {comment.edited && <span className="ml-1">(edited)</span>}
-              </p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {/* Reactions */}
-              <div className="flex items-center gap-0.5">
-                {Object.keys(REACTION_ICONS).map((reaction) => {
-                  const count = getReactionCount(reaction);
-                  const hasReacted = hasUserReacted(reaction);
-                  const Icon =
-                    REACTION_ICONS[reaction as keyof typeof REACTION_ICONS];
-
-                  return (
-                    <button
-                      key={reaction}
-                      onClick={() => handleReaction(reaction)}
-                      className={cn(
-                        "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-colors",
-                        hasReacted
-                          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-                          : "hover:bg-muted",
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          "w-3 h-3",
-                          hasReacted &&
-                            REACTION_COLORS[
-                              reaction as keyof typeof REACTION_COLORS
-                            ],
-                        )}
-                      />
-                      {count > 0 && (
-                        <span className="text-[10px]">{count}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Actions */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                    <MoreVertical className="w-3.5 h-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
-                  <DropdownMenuItem
-                    className="text-xs gap-2 cursor-pointer"
-                    onClick={() => onReply(comment)}
-                  >
-                    <Reply className="w-3.5 h-3.5" />
-                    Reply
-                  </DropdownMenuItem>
-                  {isOwner && (
-                    <>
-                      <DropdownMenuItem
-                        className="text-xs gap-2 cursor-pointer"
-                        onClick={() => setIsEditing(true)}
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-xs gap-2 text-destructive cursor-pointer"
-                        onClick={() => onDelete(comment._id)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          {/* Content */}
-          {isEditing ? (
-            <div className="mt-2 space-y-2">
-              <Textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="text-sm min-h-[60px]"
-                autoFocus
-              />
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={handleEdit}>
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditing(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm mt-1 whitespace-pre-wrap">
-              {comment.content}
-            </p>
-          )}
-
-          {/* Replies toggle */}
-          {comment.replies && comment.replies.length > 0 && (
-            <button
-              onClick={() => setShowReplies(!showReplies)}
-              className="text-xs text-muted-foreground hover:text-foreground mt-1"
-            >
-              {showReplies ? "Hide" : "Show"} {comment.replies.length} replies
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Replies */}
-      {comment.replies && comment.replies.length > 0 && showReplies && (
-        <div className="ml-10 space-y-2 border-l-2 border-muted pl-3">
-          {comment.replies.map((reply) => (
-            <CommentItem
-              key={reply._id}
-              comment={reply}
-              taskId={taskId}
-              onReply={onReply}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onReaction={onReaction}
-              currentUserId={currentUserId}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
-export default function TaskComments({ taskId, taskTitle }: TaskCommentsProps) {
-  const { user, isLoaded } = useUser();
   const [comments, setComments] = useState<Comment[]>([]);
+  const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [newComment, setNewComment] = useState("");
-  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [typingUser, setTypingUser] = useState<string | null>(null);
 
-  // ─── Fetch Comments ──────────────────────────────────────────────────────
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchComments = useCallback(async () => {
-    if (!taskId) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/comments`);
-      if (!res.ok) throw new Error("Failed to fetch comments");
-      const data = await res.json();
-
-      if (data.success) {
-        setComments(data.data);
+  // ── Fetch initial comments ──
+  useEffect(() => {
+    async function fetchComments() {
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/comments`);
+        const data = await res.json();
+        if (data.success) setComments(data.data);
+      } catch (err) {
+        console.error("Failed to fetch comments:", err);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("❌ Failed to fetch comments:", error);
-      toast.error("Failed to load comments");
-    } finally {
-      setLoading(false);
     }
+    fetchComments();
   }, [taskId]);
 
+  // ── Socket events ──
   useEffect(() => {
-    fetchComments();
-  }, [fetchComments]);
+    if (!socket) return;
 
-  // ─── Submit Comment ─────────────────────────────────────────────────────
+    // Join this task's room
+    socket.emit("join:task", taskId);
 
-  const handleSubmitComment = async () => {
-    if (!newComment.trim()) return;
-    if (!user) {
-      toast.error("Please sign in to comment");
-      return;
-    }
+    // New comment received
+    socket.on("comment:new", (comment) => {
+      setComments((prev) => {
+        // Avoid duplicates
+        if (prev.find((c) => c._id === comment._id)) return prev;
+        return [...prev, comment];
+      });
+    });
 
-    setIsSubmitting(true);
+    // Comment deleted
+    socket.on("comment:deleted", ({ commentId }) => {
+      setComments((prev) => prev.filter((c) => c._id !== commentId));
+    });
+
+    // Typing indicator
+    socket.on("comment:typing", ({ userName }) => {
+      setTypingUser(userName);
+    });
+
+    socket.on("comment:stop-typing", () => {
+      setTypingUser(null);
+    });
+
+    return () => {
+      socket.emit("leave:task", taskId);
+      socket.off("comment:new");
+      socket.off("comment:deleted");
+      socket.off("comment:typing");
+      socket.off("comment:stop-typing");
+    };
+  }, [socket, taskId]);
+
+  // ── Auto scroll to bottom ──
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [comments]);
+
+  // ── Typing handler ──
+  function handleTyping() {
+    if (!socket || !user) return;
+
+    socket.emit("comment:typing", {
+      taskId,
+      userName: user.fullName ?? user.firstName ?? "Someone",
+    });
+
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+
+    typingTimer.current = setTimeout(() => {
+      socket.emit("comment:stop-typing", { taskId });
+    }, 2000);
+  }
+
+  // ── Send comment ──
+  async function handleSend() {
+    if (!content.trim() || sending || !user) return;
+
+    setSending(true);
+
+    // Stop typing indicator
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    socket?.emit("comment:stop-typing", { taskId });
 
     try {
-      // ✅ Get user data from Clerk
-      const userData = {
-        userId: user.id,
-        email: getUserEmail(user),
-        userName: getUserDisplayName(user),
-        avatar: getUserAvatar(user),
-      };
-
       const res = await fetch(`/api/tasks/${taskId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: newComment.trim(),
-          parentId: replyingTo?._id || null,
-          ...userData, // ✅ Send user data to API
+          content,
+          email: user.emailAddresses[0].emailAddress,
+          userName: user.fullName ?? user.firstName ?? "Unknown",
+          userAvatar: user.imageUrl ?? "",
         }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to post comment");
+      if (res.ok) {
+        setContent("");
+        // Comment will appear via socket event
       }
-
-      toast.success("Comment added!");
-      setNewComment("");
-      setReplyingTo(null);
-      await fetchComments();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to post comment",
-      );
+    } catch (err) {
+      console.error("Failed to send comment:", err);
     } finally {
-      setIsSubmitting(false);
+      setSending(false);
     }
-  };
-
-  // ─── Update Comment ─────────────────────────────────────────────────────
-
-  const handleEditComment = async (comment: Comment, newContent: string) => {
-    try {
-      const res = await fetch(`/api/comments/${comment._id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newContent }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update comment");
-      }
-
-      toast.success("Comment updated!");
-      await fetchComments();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to update comment",
-      );
-    }
-  };
-
-  // ─── Delete Comment ─────────────────────────────────────────────────────
-
-  const handleDeleteComment = async (commentId: string) => {
-    if (!confirm("Are you sure you want to delete this comment?")) return;
-
-    try {
-      const res = await fetch(`/api/comments/${commentId}`, {
-        method: "DELETE",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to delete comment");
-      }
-
-      toast.success("Comment deleted!");
-      await fetchComments();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete comment",
-      );
-    }
-  };
-
-  // ─── Add Reaction ──────────────────────────────────────────────────────
-
-  const handleReaction = async (commentId: string, reaction: string) => {
-    try {
-      const res = await fetch(`/api/comments/${commentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reaction }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to add reaction");
-      }
-
-      await fetchComments();
-    } catch (error) {
-      toast.error("Failed to add reaction");
-    }
-  };
-
-  // ─── Render ──────────────────────────────────────────────────────────────
-
-  if (!isLoaded) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
-      </div>
-    );
   }
 
+  // ── Delete comment ──
+  async function handleDelete(commentId: string) {
+    try {
+      await fetch(`/api/tasks/${taskId}/comments/${commentId}`, {
+        method: "DELETE",
+      });
+      // Will be removed via socket event
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    }
+  }
+
+  // ── Enter to send ──
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  // ── Helpers ──
+  function getInitials(name: string) {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  }
+
+  function formatTime(dateStr: string) {
+    try {
+      return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+    } catch {
+      return "";
+    }
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-violet-500" />
-          Comments ({comments.length})
-        </h3>
-        {taskTitle && (
-          <Badge variant="outline" className="text-[10px]">
-            {taskTitle}
-          </Badge>
-        )}
+    <div className="flex flex-col h-full">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0">
+        <MessageSquare className="w-4 h-4 text-violet-600" />
+        <span className="text-sm font-semibold">Comments</span>
+        <span className="ml-auto text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+          {comments.length}
+        </span>
       </div>
 
-      <Separator />
-
-      {/* Comment Input */}
-      <div className="space-y-2">
-        {replyingTo && (
-          <div className="flex items-center justify-between bg-muted/50 p-2 rounded-lg">
-            <p className="text-xs text-muted-foreground">
-              Replying to{" "}
-              <span className="font-medium">
-                {replyingTo.userName || replyingTo.email}
-              </span>
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => setReplyingTo(null)}
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <Textarea
-            placeholder={replyingTo ? "Write a reply..." : "Write a comment..."}
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            className="text-sm resize-none min-h-[60px]"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmitComment();
-              }
-            }}
-          />
-        </div>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            onClick={handleSubmitComment}
-            disabled={!newComment.trim() || isSubmitting}
-            className="gap-2"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            {replyingTo ? "Reply" : "Comment"}
-          </Button>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Comments List */}
-      <ScrollArea className="max-h-[400px] pr-2">
+      {/* ── Messages ── */}
+      <ScrollArea className="flex-1 px-4 py-3">
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : comments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-2" />
-            <p className="text-sm text-muted-foreground">No comments yet</p>
-            <p className="text-xs text-muted-foreground">
-              Start the conversation!
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-3">
+              <MessageSquare className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">No comments yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Be the first to comment on this task.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {comments.map((comment) => (
-              <CommentItem
-                key={comment._id}
-                comment={comment}
-                taskId={taskId}
-                onReply={setReplyingTo}
-                onEdit={handleEditComment}
-                onDelete={handleDeleteComment}
-                onReaction={handleReaction}
-                currentUserId={user?.id || ""}
-              />
-            ))}
+            {comments.map((comment) => {
+              const isOwn = comment.userId === user?.id;
+              return (
+                <div
+                  key={comment._id}
+                  className={cn(
+                    "flex gap-3 group",
+                    isOwn && "flex-row-reverse",
+                  )}
+                >
+                  {/* Avatar */}
+                  <Avatar className="w-7 h-7 shrink-0 mt-0.5">
+                    <AvatarImage
+                      src={comment.userAvatar}
+                      alt={comment.userName}
+                    />
+                    <AvatarFallback className="text-[10px] bg-violet-100 text-violet-700">
+                      {getInitials(comment.userName)}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {/* Bubble */}
+                  <div
+                    className={cn(
+                      "max-w-[75%] space-y-1",
+                      isOwn && "items-end flex flex-col",
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-[11px] font-medium text-muted-foreground",
+                          isOwn && "order-last",
+                        )}
+                      >
+                        {isOwn ? "You" : comment.userName}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/60">
+                        {formatTime(comment.createdAt)}
+                      </span>
+                    </div>
+
+                    <div
+                      className={cn(
+                        "px-3 py-2 rounded-xl text-sm leading-relaxed",
+                        isOwn
+                          ? "bg-violet-600 text-white rounded-tr-sm"
+                          : "bg-muted text-foreground rounded-tl-sm",
+                      )}
+                    >
+                      {comment.content}
+                    </div>
+
+                    {/* Delete — own messages only */}
+                    {isOwn && (
+                      <button
+                        onClick={() => handleDelete(comment._id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-destructive flex items-center gap-1 text-[10px]"
+                      >
+                        <Trash2 className="w-3 h-3" /> Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Typing indicator */}
+            {typingUser && (
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <div className="flex gap-0.5 items-center">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </div>
+                <span>{typingUser} is typing...</span>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
           </div>
         )}
       </ScrollArea>
+
+      {/* ── Input ── */}
+      <div className="px-4 py-3 border-t shrink-0">
+        <div className="flex gap-2 items-end">
+          <Avatar className="w-7 h-7 shrink-0 mb-0.5">
+            <AvatarImage src={user?.imageUrl} alt={user?.fullName ?? ""} />
+            <AvatarFallback className="text-[10px] bg-violet-100 text-violet-700">
+              {getInitials(user?.fullName ?? user?.firstName ?? "?")}
+            </AvatarFallback>
+          </Avatar>
+
+          <div className="flex-1 relative">
+            <Textarea
+              value={content}
+              onChange={(e) => {
+                setContent(e.target.value);
+                handleTyping();
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Write a comment... (Enter to send)"
+              className="resize-none text-sm pr-10 min-h-[38px] max-h-[120px] py-2"
+              rows={1}
+              disabled={sending}
+            />
+            <Button
+              size="sm"
+              onClick={handleSend}
+              disabled={!content.trim() || sending}
+              className="absolute right-1.5 bottom-1.5 h-6 w-6 p-0 bg-violet-600 hover:bg-violet-700 text-white rounded-md disabled:opacity-40"
+            >
+              {sending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Send className="w-3 h-3" />
+              )}
+            </Button>
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1.5 ml-9">
+          <kbd className="bg-muted px-1 rounded text-[10px]">Enter</kbd> send
+          &nbsp;·&nbsp;
+          <kbd className="bg-muted px-1 rounded text-[10px]">
+            Shift+Enter
+          </kbd>{" "}
+          new line
+        </p>
+      </div>
     </div>
   );
 }
+
+export default TaskComments;

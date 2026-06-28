@@ -1,8 +1,12 @@
-// server.ts (project root mein rakho)
+// server.ts
 import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
+import dotenv from "dotenv";
+
+// ✅ Load env
+dotenv.config();
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
@@ -24,7 +28,7 @@ app.prepare().then(() => {
     transports: ["websocket", "polling"],
   });
 
-  // ── Global io instance (API routes mein use hoga) ──
+  // ✅ Global io instance (API routes mein use hoga)
   (global as any).io = io;
 
   // ── Connection handler ──
@@ -33,21 +37,29 @@ app.prepare().then(() => {
 
     // ── Join task room ──
     socket.on("join:task", (taskId: string) => {
+      if (socket.data.currentTaskId) {
+        socket.leave(`task:${socket.data.currentTaskId}`);
+      }
       socket.join(`task:${taskId}`);
+      socket.data.currentTaskId = taskId;
       console.log(`📌 Socket ${socket.id} joined task:${taskId}`);
     });
 
     // ── Leave task room ──
-    socket.on("leave:task", (taskId: string) => {
-      socket.leave(`task:${taskId}`);
-      console.log(`🚪 Socket ${socket.id} left task:${taskId}`);
+    socket.on("leave:task", () => {
+      if (socket.data.currentTaskId) {
+        socket.leave(`task:${socket.data.currentTaskId}`);
+        console.log(
+          `🚪 Socket ${socket.id} left task:${socket.data.currentTaskId}`,
+        );
+        socket.data.currentTaskId = null;
+      }
     });
 
     // ── Typing indicator ──
     socket.on(
       "comment:typing",
       ({ taskId, userName }: { taskId: string; userName: string }) => {
-        // Broadcast to everyone in room EXCEPT sender
         socket.to(`task:${taskId}`).emit("comment:typing", { userName });
       },
     );
@@ -66,6 +78,8 @@ app.prepare().then(() => {
   const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
   httpServer.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🔌 Socket.io running on ws://localhost:${PORT}/api/socket`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}\n`);
   });
 });
