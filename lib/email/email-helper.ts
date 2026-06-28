@@ -145,6 +145,7 @@ export async function sendTeamInviteEmail(data: {
   invitedByName: string;
   inviteLink: string;
   role: string;
+  expiresAt: string;
 }): Promise<void> {
   const html = buildTeamInviteTemplate(data);
   await sendAndLogEmail(

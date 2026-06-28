@@ -9,6 +9,7 @@ import {
   canChangeRole,
 } from "@/lib/permissions";
 import { v4 as uuidv4 } from "uuid";
+import { sendTeamInviteEmail } from "@/lib/email/email-helper";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -274,6 +275,24 @@ export async function inviteMember(data: InviteMemberInput) {
     });
 
     const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${token}`;
+
+    const inviter = await TeamMember.findOne({
+      organizationId: data.organizationId,
+      userId: data.invitedBy,
+    });
+
+    const invitedByName = inviter?.name || "Someone";
+
+    // ✅ Send email notification
+    await sendTeamInviteEmail({
+      userId: data.invitedBy,
+      to: data.email,
+      organizationName: org.name,
+      invitedByName: invitedByName,
+      inviteLink: inviteLink,
+      role: data.role || "member",
+      expiresAt: expiresAt.toLocaleDateString(),
+    });
 
     return {
       success: true,
