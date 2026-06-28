@@ -81,7 +81,7 @@ export async function POST(
       );
     }
 
-    // ✅ Create comment with user data from frontend
+    // ✅ Create comment
     const result = await createComment({
       taskId: id,
       userId: userId,
@@ -95,6 +95,32 @@ export async function POST(
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 500 });
+    }
+
+    try {
+      const io = (global as any).io;
+      if (io) {
+        const commentData = {
+          ...result.data,
+          content: result.data.content,
+          _id: result.data._id,
+          createdAt: result.data.createdAt,
+          userId: userId,
+          userName: body.userName || "User",
+          userAvatar: body.avatar || "",
+        };
+
+        // Emit to all clients in the task room
+        io.to(`task:${id}`).emit("comment:new", commentData);
+        console.log(`📤 Socket emitted comment:new for task ${id}`);
+      } else {
+        console.warn(
+          "⚠️ Socket.io not initialized. Real-time updates disabled.",
+        );
+      }
+    } catch (socketError) {
+      console.error("❌ Socket emit error:", socketError);
+      // Don't fail the request if socket fails
     }
 
     return NextResponse.json({
