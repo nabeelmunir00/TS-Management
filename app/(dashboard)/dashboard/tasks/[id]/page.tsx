@@ -59,7 +59,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import TaskComments from "@/components/TaskComments";
+// import TaskComments from "@/components/TaskComments";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import type {
   Task,
@@ -759,9 +759,9 @@ export default function TaskDetailPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="comments">
+            {/* <TabsContent value="comments">
               <TaskComments taskId={task._id || ""} taskTitle={task.title} />
-            </TabsContent>
+            </TabsContent> */}
           </Tabs>
         </div>
       </ScrollArea>
