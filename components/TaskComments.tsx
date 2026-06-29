@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface TaskCommentsProps {
   taskId: string;
+  taskTitle: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

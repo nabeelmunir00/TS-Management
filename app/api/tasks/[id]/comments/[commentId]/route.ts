@@ -9,7 +9,7 @@ import CommentModel from "@/lib/models/Comment";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string; commentId: string } },
+  { params }: { params: Promise<{ id: string; commentId: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -17,10 +17,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     await connectDB();
+    const { id, commentId } = await params;
 
     const comment = await CommentModel.findOne({
-      _id: params.commentId,
-      taskId: params.id,
+      _id: commentId,
+      taskId: id,
       userId, // only owner can delete
     });
 
@@ -28,13 +29,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Comment not found" }, { status: 404 });
     }
 
-    await CommentModel.findByIdAndDelete(params.commentId);
+    await CommentModel.findByIdAndDelete(commentId);
 
     // ── Emit delete event ──
     const io = (global as any).io;
     if (io) {
-      io.to(`task:${params.id}`).emit("comment:deleted", {
-        commentId: params.commentId,
+      io.to(`task:${id}`).emit("comment:deleted", {
+        commentId: commentId,
       });
     }
 
