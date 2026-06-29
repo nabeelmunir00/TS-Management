@@ -18,10 +18,6 @@ app.prepare().then(() => {
 
   // ── Socket.io attach karo ──
   const io = new SocketIOServer(httpServer, {
-    cors: {
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
     transports: ["websocket", "polling"],
   });
 
