@@ -3,10 +3,8 @@ import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
-import dotenv from "dotenv";
 
 // ✅ Load env
-dotenv.config();
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
@@ -21,7 +19,6 @@ app.prepare().then(() => {
   // ── Socket.io attach karo ──
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
       methods: ["GET", "POST"],
       credentials: true,
     },
