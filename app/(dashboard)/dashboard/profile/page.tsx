@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
+import { SignOutButton, useUser } from "@clerk/nextjs";
 import {
   User,
   Mail,
@@ -217,7 +217,7 @@ function ActivityItem({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
-  const { user, isLoaded, signOut } = useUser();
+  const { user, isLoaded } = useUser();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -408,15 +408,16 @@ export default function ProfilePage() {
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => signOut()}
-                  className="gap-2 text-destructive hover:text-destructive"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Sign Out
-                </Button>
+                <SignOutButton>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-destructive hover:text-destructive"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </Button>
+                </SignOutButton>
               </TooltipTrigger>
               <TooltipContent>
                 <p>Sign out from your account</p>
