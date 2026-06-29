@@ -12,7 +12,7 @@ let socketInstance: TypedSocket | null = null;
 function getSocket(): TypedSocket {
   if (!socketInstance) {
     socketInstance = io(
-      process.env.NEXT_PUBLIC_APP_URL ?? "https://dev-hubs-flax.vercel.app",
+      // process.env.NEXT_PUBLIC_APP_URL ?? "https://dev-hubs-flax.vercel.app",
       {
         transports: ["websocket", "polling"],
         autoConnect: true,
